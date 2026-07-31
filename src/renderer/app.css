@@ -1,0 +1,39 @@
+@import 'tailwindcss';
+
+/* A workbench, not a dashboard: dark, dense, monospace where numbers matter,
+   and no accent colour competing with the generated images themselves. */
+@theme {
+  --color-bench-950: #08090b;
+  --color-bench-900: #0b0d10;
+  --color-bench-850: #101317;
+  --color-bench-800: #161a20;
+  --color-bench-700: #222831;
+  --color-bench-600: #333c48;
+  --color-bench-400: #6b7787;
+  --color-bench-300: #97a3b4;
+  --color-bench-100: #dfe5ec;
+  --color-signal: #d8a657;
+  --color-live: #7fb069;
+  --color-fault: #d16a68;
+}
+
+:root { color-scheme: dark; }
+
+html, body, #app { height: 100%; }
+body {
+  margin: 0;
+  background: var(--color-bench-900);
+  color: var(--color-bench-100);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+  font-size: 13px;
+  overflow: hidden;
+}
+.mono { font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
+
+/* The draggable strip behind the traffic lights. */
+.titlebar { -webkit-app-region: drag; }
+.titlebar button, .titlebar input, .titlebar select { -webkit-app-region: no-drag; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--color-bench-700); border-radius: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
