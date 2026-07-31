@@ -42,6 +42,10 @@
             <div class="flex items-center gap-2">
               <span class="size-1.5 rounded-full shrink-0 {on ? 'bg-signal' : 'bg-bench-600'}"></span>
               <span class="text-[12px] truncate {on ? 'text-bench-100' : 'text-bench-300'}">{a.label}</span>
+              {#if a.requiresImage}
+                <span class="mono text-[9px] uppercase tracking-wide text-amber-500/80 border border-amber-500/30 rounded px-1 shrink-0"
+                      title="This model edits an input image — it cannot run from a prompt alone.">img in</span>
+              {/if}
               {#if a.approxPeakGb}
                 <span class="mono text-[10px] text-bench-600 ml-auto shrink-0">{a.approxPeakGb}GB</span>
               {/if}

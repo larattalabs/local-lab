@@ -26,6 +26,13 @@ export interface Adapter extends AdapterInfo {
    */
   requires: string[]
   build(ctx: RunContext): Spawn
+  /**
+   * For streaming adapters whose stdout is NOT plain text (e.g. Ollama's
+   * NDJSON API): returns a stateful per-job chunk parser that yields the
+   * display text extracted from each raw chunk. Main-process only — never
+   * crosses IPC.
+   */
+  makeStream?: () => (chunk: string) => string
 }
 
 /** Strip the functions and internals so the object can cross the IPC bridge. */
@@ -39,6 +46,7 @@ export function toInfo(a: Adapter): AdapterInfo {
     outputExt: a.outputExt,
     params: a.params,
     acceptsImages: a.acceptsImages,
+    requiresImage: a.requiresImage,
     streams: a.streams,
     approxPeakGb: a.approxPeakGb,
   }

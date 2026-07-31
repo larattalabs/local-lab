@@ -58,6 +58,24 @@ To build a distributable `.app`:
 pnpm dist
 ```
 
+### Driving it headlessly (for agents and debugging)
+
+Two opt-in dev affordances, both inert unless you set the env var:
+
+```bash
+# The app screenshots ITSELF (capturePage) into <dir>/locallab.png every 2s —
+# no macOS screen-recording permission involved.
+LOCALLAB_SHOT=/tmp/shots pnpm dev
+
+# Chrome DevTools Protocol on a port, so a script can drive the real UI:
+LOCALLAB_CDP=9223 pnpm dev
+# then e.g. list targets:  curl localhost:9223/json
+```
+
+These exist because this app was built (and is tested) largely by a coding
+agent, which needs eyes and hands that don't depend on screen permissions or
+guessing at window coordinates.
+
 ## How it works
 
 ```

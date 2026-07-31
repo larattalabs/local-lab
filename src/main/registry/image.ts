@@ -85,7 +85,12 @@ const krea2: Adapter = {
       '--width', String(w), '--height', String(h),
       '--out', outPath,
     ]
-    if (params.seed != null && params.seed !== '') args.push('--seed', String(params.seed))
+    // generate.py defaults --seed to 0, so omitting it does NOT randomize —
+    // it silently reproduces the same image every "random" run. Inject one.
+    const seed = params.seed != null && params.seed !== ''
+      ? String(params.seed)
+      : String(Math.floor(Math.random() * 2 ** 31))
+    args.push('--seed', seed)
     if (images.length) {
       args.push('--init-image', images[0], '--strength', String(num(params, 'strength', 0.6)))
     }
@@ -110,6 +115,12 @@ interface MfluxSpec {
   multiImage?: boolean
   /** Uses --image-path + --image-strength (img2img / single-ref edit). */
   singleImage?: boolean
+  /** CLI refuses to run without an input image (editing/variation models). */
+  requiresImage?: boolean
+  /** Override the image flag when a CLI invents its own (redux). */
+  imageFlag?: string
+  /** Override the strength flag; null = the CLI has no strength option. */
+  strengthFlag?: string | null
 }
 
 const MFLUX: MfluxSpec[] = [
@@ -122,7 +133,7 @@ const MFLUX: MfluxSpec[] = [
   { id: 'flux2-edit', label: 'FLUX.2 Klein 4B — edit', bin: 'mflux-generate-flux2-edit',
     baseModel: 'flux2-klein-4b',
     notes: 'Multi-image REFERENCE conditioning: keeps a subject across new scenes.',
-    defaultSteps: 8, approxPeakGb: 20, quantize: '8', multiImage: true },
+    defaultSteps: 8, approxPeakGb: 20, quantize: '8', multiImage: true, requiresImage: true },
   { id: 'flux-dev', label: 'FLUX.1 dev', bin: 'mflux-generate', baseModel: 'dev',
     notes: 'The classic FLUX.1 dev. Needs ~20-25 steps.', defaultSteps: 20, approxPeakGb: 24 },
   { id: 'flux-schnell', label: 'FLUX.1 schnell', bin: 'mflux-generate', baseModel: 'schnell',
@@ -132,13 +143,15 @@ const MFLUX: MfluxSpec[] = [
     defaultSteps: 20, approxPeakGb: 24 },
   { id: 'kontext', label: 'FLUX.1 Kontext', bin: 'mflux-generate-kontext',
     notes: 'In-context editing from a single image + instruction.',
-    defaultSteps: 20, approxPeakGb: 24, singleImage: true },
+    defaultSteps: 20, approxPeakGb: 24, singleImage: true, requiresImage: true },
   { id: 'qwen-image', label: 'Qwen Image', bin: 'mflux-generate-qwen',
     notes: 'Strong at rendering legible text inside images.',
     defaultSteps: 20, approxPeakGb: 28 },
+  // qwen-edit takes --image-paths (variadic, REQUIRED) and has no strength
+  // flag — verified against the installed CLI, not assumed from its siblings.
   { id: 'qwen-image-edit', label: 'Qwen Image Edit', bin: 'mflux-generate-qwen-edit',
     notes: 'Instruction-driven editing with identity preservation.',
-    defaultSteps: 20, approxPeakGb: 28, singleImage: true },
+    defaultSteps: 20, approxPeakGb: 28, multiImage: true, requiresImage: true },
   { id: 'z-image-turbo', label: 'Z-Image Turbo', bin: 'mflux-generate-z-image-turbo',
     notes: 'Very fast turbo model.', defaultSteps: 8, approxPeakGb: 14 },
   { id: 'z-image', label: 'Z-Image', bin: 'mflux-generate-z-image',
@@ -152,9 +165,11 @@ const MFLUX: MfluxSpec[] = [
     notes: "Baidu's ERNIE image model, turbo variant.", defaultSteps: 8, approxPeakGb: 18 },
   { id: 'ideogram4', label: 'Ideogram 4', bin: 'mflux-generate-ideogram4',
     notes: 'Typography-focused generation.', defaultSteps: 20, approxPeakGb: 20 },
+  // redux invented its own flag names: --redux-image-paths / --redux-image-strengths.
   { id: 'redux', label: 'FLUX.1 Redux', bin: 'mflux-generate-redux',
     notes: 'Image variation — riff on an input image.',
-    defaultSteps: 20, approxPeakGb: 24, singleImage: true },
+    defaultSteps: 20, approxPeakGb: 24, multiImage: true, requiresImage: true,
+    imageFlag: '--redux-image-paths', strengthFlag: '--redux-image-strengths' },
 ]
 
 function mfluxAdapter(spec: MfluxSpec): Adapter {
@@ -173,7 +188,7 @@ function mfluxAdapter(spec: MfluxSpec): Adapter {
         { value: '4', label: '4-bit' }, { value: '3', label: '3-bit' },
       ] },
   ]
-  if (spec.singleImage) {
+  if ((spec.singleImage && spec.strengthFlag !== null) || spec.strengthFlag) {
     params.push({ key: 'image_strength', label: 'Image strength', type: 'float',
       default: 0.4, min: 0, max: 1, step: 0.05,
       help: 'How strongly the input image constrains the result. 0 = ignore it.' })
@@ -187,6 +202,7 @@ function mfluxAdapter(spec: MfluxSpec): Adapter {
     outputExt: 'png',
     approxPeakGb: spec.approxPeakGb,
     acceptsImages: Boolean(spec.multiImage || spec.singleImage),
+    requiresImage: spec.requiresImage,
     requires: [bin],
     params,
     build({ prompt, params: p, outPath, images }: RunContext) {
@@ -199,10 +215,18 @@ function mfluxAdapter(spec: MfluxSpec): Adapter {
       // Reference images must precede --prompt for the variadic form: any
       // token after `--image-paths a b c` would otherwise be swallowed as
       // another path.
-      if (spec.multiImage && images.length) args.push('--image-paths', ...images)
-      else if (spec.singleImage && images.length) {
-        args.push('--image-path', images[0],
-          '--image-strength', String(num(p, 'image_strength', 0.4)))
+      if (spec.multiImage && images.length) {
+        args.push(spec.imageFlag ?? '--image-paths', ...images)
+        if (spec.strengthFlag) {
+          args.push(spec.strengthFlag,
+            ...images.map(() => String(num(p, 'image_strength', 0.4))))
+        }
+      } else if (spec.singleImage && images.length) {
+        args.push(spec.imageFlag ?? '--image-path', images[0])
+        if (spec.strengthFlag !== null) {
+          args.push(spec.strengthFlag ?? '--image-strength',
+            String(num(p, 'image_strength', 0.4)))
+        }
       }
 
       args.push('--prompt', prompt,

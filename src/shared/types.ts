@@ -46,6 +46,10 @@ export interface AdapterInfo {
   params: ParamSpec[]
   /** Accepts reference/init images (FLUX.2 edit, Kontext, img2img). */
   acceptsImages?: boolean
+  /** The CLI *requires* an input image — editing/variation models. Running
+   *  without one fails immediately with a clear message instead of a
+   *  argparse traceback. */
+  requiresImage?: boolean
   /** Streams tokens to stdout instead of writing a file. */
   streams?: boolean
   /** Rough peak memory in GB, shown as a warning before running big models. */

@@ -13,23 +13,23 @@ const ACESTEP_PY = join(ACESTEP_DIR, '.venv', 'bin', 'python')
  * resources/workers/acestep_worker.py), the same shape every other adapter
  * uses: arguments in, one file out.
  *
- * EXPERIMENTAL: the worker is written against ACE-Step's documented pipeline
- * API but has not been run end-to-end here. Expect to adjust the worker, not
- * this adapter, if the first run fails.
+ * The worker drives the handler/inference API (AceStepHandler +
+ * generate_music) — the same call path ACE-Step's own UI uses.
  */
 const acestep: Adapter = {
   id: 'acestep',
   label: 'ACE-Step v1.5',
   modality: 'music',
   family: 'acestep',
-  notes: 'EXPERIMENTAL — text-to-music. Worker not yet verified end-to-end.',
+  notes: 'Text-to-music (xl-turbo DiT + 4B LM). Lyrics optional; blank = instrumental.',
   outputExt: 'wav',
   approxPeakGb: 24,
   requires: [ACESTEP_PY],
   params: [
     { key: 'duration', label: 'Duration (s)', type: 'int', default: 30, min: 5, max: 240 },
     { key: 'seed', label: 'Seed', type: 'seed', default: null },
-    { key: 'steps', label: 'Steps', type: 'int', default: 27, min: 8, max: 60, advanced: true },
+    { key: 'steps', label: 'Steps', type: 'int', default: 8, min: 4, max: 60, advanced: true,
+      help: 'xl-turbo is tuned for 8 steps with guidance off.' },
     { key: 'lyrics', label: 'Lyrics', type: 'string', default: '', advanced: true,
       help: 'Leave blank for an instrumental.' },
   ],
@@ -38,7 +38,7 @@ const acestep: Adapter = {
       workerPath('acestep_worker.py'),
       '--prompt', prompt,
       '--duration', String(params.duration ?? 30),
-      '--steps', String(params.steps ?? 27),
+      '--steps', String(params.steps ?? 8),
       '--output', outPath,
     ]
     if (params.seed != null && params.seed !== '') args.push('--seed', String(params.seed))

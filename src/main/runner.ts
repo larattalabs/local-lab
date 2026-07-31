@@ -112,6 +112,16 @@ class Runner {
       return this.pump()
     }
 
+    // Editing/variation CLIs hard-require an input image; catch it here with
+    // a sentence instead of letting argparse produce a usage dump.
+    if (adapter.requiresImage && !(job.images?.length)) {
+      job.state = 'error'
+      job.error = `${adapter.label} needs an input image — attach one above the prompt and rerun.`
+      job.finishedAt = Date.now()
+      this.emit(job)
+      return this.pump()
+    }
+
     const stamp = new Date(job.queuedAt).toISOString().replace(/[:.]/g, '-')
     const dir = join(RUNS_DIR, job.modality, `${stamp}_${adapter.id.replace(/[:/]/g, '_')}`)
     mkdirSync(dir, { recursive: true })
@@ -146,12 +156,17 @@ class Runner {
     })
     this.active = { id: job.id, child }
 
+    // Streaming adapters may emit a wire format rather than plain text
+    // (Ollama's API streams NDJSON); makeStream returns a stateful parser
+    // that extracts the display text. Without one, stdout IS the text.
+    const extract = adapter.makeStream?.()
     const append = (chunk: Buffer, toText: boolean) => {
       const s = chunk.toString()
+      const display = toText && extract ? extract(s) : s
       // Progress bars rewrite the same line thousands of times; keeping every
       // frame would grow the log without bound on a long run.
-      job.log = (job.log + s).slice(-40_000)
-      if (toText && adapter.streams) job.text = (job.text ?? '') + s
+      job.log = (job.log + display).slice(-40_000)
+      if (toText && adapter.streams) job.text = (job.text ?? '') + display
       this.emit(job)
     }
     child.stdout?.on('data', (c: Buffer) => append(c, true))
