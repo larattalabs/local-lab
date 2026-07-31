@@ -5,6 +5,10 @@ import type { Adapter, RunContext } from './types'
 const home = homedir()
 const LTX_VENV = process.env.LOCALLAB_LTX_VENV ?? join(home, 'AI', 'venvs', 'ltx-av')
 const LTX_PY = join(LTX_VENV, 'bin', 'python')
+// mlx_video's DEFAULT repo is the older ltx2-mlx-av; the weights cached on this
+// machine (and what VideoStuff runs daily) are the 2.3 repo. Omitting the flag
+// therefore fails under offline mode even though the model is fully present.
+const LTX_MODEL_REPO = process.env.LOCALLAB_LTX_MODEL_REPO ?? 'notapalindrome/ltx23-mlx-av'
 
 function num(p: Record<string, unknown>, k: string, d: number): number {
   const v = p[k]
@@ -61,6 +65,7 @@ const ltx: Adapter = {
     const [w, h] = String(p.resolution ?? '768x448').split('x').map(Number)
     const args = [
       '-m', 'mlx_video.generate_av',
+      '--model-repo', LTX_MODEL_REPO,
       '--prompt', prompt,
       '--width', String(w), '--height', String(h),
       '--num-frames', String(p.frames ?? 97),
