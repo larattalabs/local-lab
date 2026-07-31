@@ -9,6 +9,17 @@ import { modelEnv, RUNS_DIR } from './env'
 type Emit = (job: Job) => void
 
 /**
+ * Heuristic, matched against what the loaders actually print when weights are
+ * absent under HF_HUB_OFFLINE. Deliberately broad — a false positive costs a
+ * misleading hint appended below the real traceback, which is still visible.
+ */
+function looksLikeMissingWeights(log: string): boolean {
+  return /PathResolution|LocalEntryNotFound|OfflineModeIsEnabled|couldn't connect|weight_loader|snapshot_download|No such file or directory.*(hub|snapshots)/i.test(
+    log
+  )
+}
+
+/**
  * Jobs run ONE AT A TIME, deliberately.
  *
  * This app exists to compare model A against model B, which invites firing
@@ -168,6 +179,20 @@ class Runner {
         job.state = 'error'
         // The tail is where the traceback is; the head is usually banner noise.
         job.error = `exit ${code}\n${job.log.slice(-1500)}`
+
+        // The most common first-run failure by far: the CLI is installed but
+        // the model's weights were never downloaded, and offline mode (on by
+        // default — see env.ts) turned that into a path-resolution error deep
+        // inside the loader. That traceback says nothing about downloading, so
+        // say it here.
+        if (looksLikeMissingWeights(job.log) && process.env.LOCALLAB_ALLOW_DOWNLOAD !== '1') {
+          job.error =
+            `${adapter.label}'s weights don't appear to be downloaded yet.\n\n` +
+            `Local Lab runs offline by default so a missing model fails fast ` +
+            `instead of silently downloading gigabytes mid-run. To fetch it, ` +
+            `relaunch with:\n\n    LOCALLAB_ALLOW_DOWNLOAD=1 pnpm dev\n\n` +
+            `--- original error ---\n${job.error}`
+        }
       }
       this.emit(job)
       this.pump()

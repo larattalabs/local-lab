@@ -9,8 +9,6 @@ a declarative entry in a registry — no UI work.
 Built because comparing local models otherwise means a terminal, several venvs,
 and remembering which flag each CLI wants.
 
-![sections: image, video, music, text](docs/screenshot.png)
-
 ## Why a desktop app
 
 These models are 14–41 GB apiece and live in separate Python virtualenvs. The app
@@ -32,6 +30,16 @@ macOS on Apple Silicon, with as many of these as you care about:
 
 Anything missing simply shows as unavailable with the path it looked for — the
 app runs fine with only some of them installed.
+
+**Availability checks the CLI, not the weights.** A model can be listed as
+runnable and still fail on first use because its weights were never downloaded.
+Local Lab runs offline by default (see below), so that failure is fast and loud
+rather than a silent multi-gigabyte download mid-run — and the error tells you
+how to fetch it:
+
+```bash
+LOCALLAB_ALLOW_DOWNLOAD=1 pnpm dev
+```
 
 Every path is overridable by environment variable (`LOCALLAB_KREA2_DIR`,
 `LOCALLAB_LTX_VENV`, `LOCALLAB_ACESTEP_DIR`, `LOCALLAB_OLLAMA_BIN`,
