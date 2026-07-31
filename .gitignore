@@ -7,3 +7,4 @@ dist/
 
 # Generated media — this app produces a lot of it, and it does not belong in git.
 runs/
+*.tsbuildinfo
