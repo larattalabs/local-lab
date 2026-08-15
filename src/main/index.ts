@@ -1,13 +1,13 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, protocol } from 'electron'
 import { join } from 'node:path'
-import { mkdirSync } from 'node:fs'
+import { createReadStream, mkdirSync, statSync } from 'node:fs'
+import { Readable } from 'node:stream'
 import { allAdapters, availability, refresh, byModality } from './registry'
 import { toInfo } from './registry/types'
 import { runner } from './runner'
 import { deleteRun, listRuns } from './history'
 import { RUNS_DIR } from './env'
 import type { Modality, RunRequest } from '@shared/types'
-import { pathToFileURL } from 'node:url'
 import { resolve, sep } from 'node:path'
 
 /**
@@ -80,7 +80,41 @@ app.whenReady().then(() => {
     if (!target.startsWith(runsRoot)) {
       return new Response('forbidden', { status: 403 })
     }
-    return net.fetch(pathToFileURL(target).toString())
+    // Serve the bytes ourselves with real Range support. Proxying through
+    // net.fetch(file://) drops the renderer's Range header and answers with a
+    // rangeless 200 — Chromium's media stack then can't seek, so the scrub bar
+    // snaps back and <audio> duration is a guess until the stream ends.
+    let size: number
+    try {
+      const st = statSync(target)
+      if (!st.isFile()) return new Response('not a file', { status: 404 })
+      size = st.size
+    } catch {
+      return new Response('not found', { status: 404 })
+    }
+    const type =
+      { wav: 'audio/wav', mp3: 'audio/mpeg', flac: 'audio/flac', mp4: 'video/mp4',
+        png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp',
+        txt: 'text/plain; charset=utf-8' }[target.split('.').pop() ?? ''] ??
+      'application/octet-stream'
+    const headers: Record<string, string> = { 'Content-Type': type, 'Accept-Ranges': 'bytes' }
+
+    const range = /^bytes=(\d*)-(\d*)$/.exec(request.headers.get('Range') ?? '')
+    let start = 0
+    let end = size - 1
+    if (range && (range[1] || range[2])) {
+      start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]))
+      if (range[1] && range[2]) end = Math.min(Number(range[2]), size - 1)
+      if (start > end || start >= size) {
+        return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } })
+      }
+      headers['Content-Range'] = `bytes ${start}-${end}/${size}`
+    }
+    headers['Content-Length'] = String(end - start + 1)
+    const body = Readable.toWeb(
+      createReadStream(target, { start, end })
+    ) as ReadableStream<Uint8Array>
+    return new Response(body, { status: range ? 206 : 200, headers })
   })
 
   // Push every job transition to the renderer; the UI is a pure view of runner state.
@@ -104,8 +138,8 @@ app.whenReady().then(() => {
     return r.canceled ? [] : r.filePaths
   })
   ipcMain.handle('files:reveal', (_e, p: string) => shell.showItemInFolder(p))
-ipcMain.handle('history:list', () => listRuns())
-ipcMain.handle('history:delete', (_e, dir: string) => deleteRun(dir))
+  ipcMain.handle('history:list', () => listRuns())
+  ipcMain.handle('history:delete', (_e, dir: string) => deleteRun(dir))
   ipcMain.handle('files:openRuns', () => shell.openPath(RUNS_DIR))
   ipcMain.handle('app:runsDir', () => RUNS_DIR)
 
