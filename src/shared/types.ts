@@ -102,3 +102,25 @@ export interface RunRequest {
   params: Record<string, Record<string, unknown>>
   images?: string[]
 }
+
+/**
+ * One persisted generation, as written to `run.json` in its run directory.
+ * History is rebuilt purely from disk — the runs folder IS the database, so
+ * deleting a folder in Finder and deleting from the app agree by construction.
+ */
+export interface RunRecord {
+  dir: string
+  modality: Modality
+  adapterId: string
+  adapterLabel: string
+  prompt: string
+  params: Record<string, unknown>
+  state: 'done' | 'error' | 'cancelled'
+  queuedAt: number
+  startedAt?: number
+  finishedAt?: number
+  /** Absolute path of the artifact, when the run produced a file. */
+  outputPath?: string
+  /** First ~2000 chars of a text run's output, for preview. */
+  textPreview?: string
+}

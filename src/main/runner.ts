@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import type { Job, RunRequest, Modality } from '@shared/types'
 import { byId } from './registry'
 import { modelEnv, RUNS_DIR } from './env'
+import { writeRunRecord } from './history'
 
 type Emit = (job: Job) => void
 
@@ -209,6 +210,7 @@ class Runner {
             `--- original error ---\n${job.error}`
         }
       }
+      writeRunRecord(dir, adapter, job)
       this.emit(job)
       this.pump()
     })

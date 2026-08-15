@@ -4,6 +4,7 @@ import { mkdirSync } from 'node:fs'
 import { allAdapters, availability, refresh, byModality } from './registry'
 import { toInfo } from './registry/types'
 import { runner } from './runner'
+import { deleteRun, listRuns } from './history'
 import { RUNS_DIR } from './env'
 import type { Modality, RunRequest } from '@shared/types'
 import { pathToFileURL } from 'node:url'
@@ -103,6 +104,8 @@ app.whenReady().then(() => {
     return r.canceled ? [] : r.filePaths
   })
   ipcMain.handle('files:reveal', (_e, p: string) => shell.showItemInFolder(p))
+ipcMain.handle('history:list', () => listRuns())
+ipcMain.handle('history:delete', (_e, dir: string) => deleteRun(dir))
   ipcMain.handle('files:openRuns', () => shell.openPath(RUNS_DIR))
   ipcMain.handle('app:runsDir', () => RUNS_DIR)
 

@@ -2,9 +2,11 @@
   import { MODALITIES, type Modality } from '@shared/types'
   import { store } from './lib/stores/lab.svelte'
   import Workbench from './lib/components/Workbench.svelte'
+  import History from './lib/components/History.svelte'
   import QueueBar from './lib/components/QueueBar.svelte'
 
   let active = $state<Modality>('image')
+  let view = $state<'lab' | 'history'>('lab')
   let ready = $state(false)
 
   $effect(() => {
@@ -20,15 +22,18 @@
         class="px-3 py-1.5 rounded text-[12px] transition-colors
                {active === m.id ? 'bg-bench-700 text-bench-100' : 'text-bench-400 hover:text-bench-100'}"
         title={m.blurb}
-        onclick={() => (active = m.id)}
+        onclick={() => { active = m.id; view = 'lab' }}
       >{m.label}</button>
     {/each}
     <div class="flex-1"></div>
-    <button class="mono text-[11px] text-bench-400 hover:text-bench-100 px-2 py-1"
-            onclick={() => window.lab.openRuns()}>runs&nbsp;↗</button>
+    <button class="px-3 py-1.5 rounded text-[12px] transition-colors
+                   {view === 'history' ? 'bg-bench-700 text-bench-100' : 'text-bench-400 hover:text-bench-100'}"
+            onclick={() => (view = view === 'history' ? 'lab' : 'history')}>History</button>
   </header>
 
-  {#if ready}
+  {#if ready && view === 'history'}
+    <History />
+  {:else if ready}
     <Workbench modality={active} />
   {:else}
     <div class="flex-1 grid place-items-center text-bench-400 mono text-[12px]">

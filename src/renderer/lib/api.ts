@@ -1,4 +1,4 @@
-import type { AdapterInfo, AvailabilityReport, Job, Modality, RunRequest } from '@shared/types'
+import type { AdapterInfo, AvailabilityReport, Job, Modality, RunRecord, RunRequest } from '@shared/types'
 
 interface LabApi {
   listAdapters(): Promise<AdapterInfo[]>
@@ -9,6 +9,8 @@ interface LabApi {
   run(req: RunRequest): Promise<Job[]>
   cancel(id: string): Promise<void>
   clearFinished(): Promise<void>
+  listHistory(): Promise<RunRecord[]>
+  deleteRun(dir: string): Promise<void>
   pickImages(): Promise<string[]>
   reveal(p: string): Promise<void>
   openRuns(): Promise<void>
