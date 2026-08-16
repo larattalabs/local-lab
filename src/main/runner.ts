@@ -31,6 +31,8 @@ function looksLikeMissingWeights(log: string): boolean {
  */
 class Runner {
   private jobs = new Map<string, Job>()
+  /** Conversation turns per queued job; consumed at spawn, never on Job itself. */
+  private history = new Map<string, { role: 'user' | 'assistant'; content: string }[]>()
   private queue: string[] = []
   private active: { id: string; child: ChildProcess } | null = null
   private emit: Emit = () => {}
@@ -65,6 +67,7 @@ class Runner {
         queuedAt: Date.now(),
         log: '',
       }
+      if (req.history?.length) this.history.set(job.id, req.history)
       this.jobs.set(job.id, job)
       this.queue.push(job.id)
       created.push(job)
@@ -126,10 +129,13 @@ class Runner {
     const stamp = new Date(job.queuedAt).toISOString().replace(/[:.]/g, '-')
     const dir = join(RUNS_DIR, job.modality, `${stamp}_${adapter.id.replace(/[:/]/g, '_')}`)
     mkdirSync(dir, { recursive: true })
+    job.runDir = dir
     const outPath = adapter.outputExt
       ? join(dir, `output.${adapter.outputExt}`)
       : join(dir, 'output.txt')
 
+    const history = this.history.get(job.id)
+    this.history.delete(job.id)
     let spec
     try {
       spec = adapter.build({
@@ -137,6 +143,7 @@ class Runner {
         params: job.params,
         outPath,
         images: job.images ?? [],
+        history,
       })
     } catch (e) {
       job.state = 'error'

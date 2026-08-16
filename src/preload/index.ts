@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AdapterInfo, AvailabilityReport, Job, Modality, RunRecord, RunRequest } from '@shared/types'
+import type { AdapterInfo, AvailabilityReport, Chat, Job, Modality, RunRecord, RunRequest } from '@shared/types'
 
 /**
  * The renderer gets exactly these calls and nothing else — no `require`, no
@@ -20,6 +20,9 @@ const api = {
 
   listHistory: (): Promise<RunRecord[]> => ipcRenderer.invoke('history:list'),
   deleteRun: (dir: string): Promise<void> => ipcRenderer.invoke('history:delete', dir),
+  listChats: (): Promise<Chat[]> => ipcRenderer.invoke('chats:list'),
+  saveChat: (chat: Chat): Promise<void> => ipcRenderer.invoke('chats:save', chat),
+  deleteChat: (id: string): Promise<void> => ipcRenderer.invoke('chats:delete', id),
 
   pickImages: (): Promise<string[]> => ipcRenderer.invoke('files:pickImages'),
   reveal: (p: string): Promise<void> => ipcRenderer.invoke('files:reveal', p),

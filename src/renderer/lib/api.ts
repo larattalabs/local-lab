@@ -1,4 +1,4 @@
-import type { AdapterInfo, AvailabilityReport, Job, Modality, RunRecord, RunRequest } from '@shared/types'
+import type { AdapterInfo, AvailabilityReport, Chat, Job, Modality, RunRecord, RunRequest } from '@shared/types'
 
 interface LabApi {
   listAdapters(): Promise<AdapterInfo[]>
@@ -11,6 +11,9 @@ interface LabApi {
   clearFinished(): Promise<void>
   listHistory(): Promise<RunRecord[]>
   deleteRun(dir: string): Promise<void>
+  listChats(): Promise<Chat[]>
+  saveChat(chat: Chat): Promise<void>
+  deleteChat(id: string): Promise<void>
   pickImages(): Promise<string[]>
   reveal(p: string): Promise<void>
   openRuns(): Promise<void>
@@ -23,3 +26,12 @@ declare global {
 }
 
 export const lab = window.lab
+
+/**
+ * Served over the app's own `labfile://` scheme — see src/main/index.ts for
+ * why plain file:// does not work here, and why the whole path goes in as a
+ * single encoded segment rather than as URL path components.
+ */
+export function fileUrl(p: string): string {
+  return 'labfile://f/' + encodeURIComponent(p)
+}

@@ -84,6 +84,8 @@ export interface Job {
   finishedAt?: number
   /** Everything the process printed — the first thing you want when it fails. */
   log: string
+  /** Run directory holding run.json + the artifact; set when the job starts. */
+  runDir?: string
 }
 
 /** One prompt fanned out across N models — the reason this app exists. */
@@ -101,6 +103,8 @@ export interface RunRequest {
   prompt: string
   params: Record<string, Record<string, unknown>>
   images?: string[]
+  /** Prior conversation turns, for context-aware text generation. */
+  history?: { role: 'user' | 'assistant'; content: string }[]
 }
 
 /**
@@ -123,4 +127,47 @@ export interface RunRecord {
   outputPath?: string
   /** First ~2000 chars of a text run's output, for preview. */
   textPreview?: string
+}
+
+/**
+ * One turn in a conversation. A 'user' message is the prompt as typed; each
+ * model it fanned out to gets its own 'gen' message. Gen messages mirror the
+ * final state of their job so the chat replays fully after a restart, while
+ * live jobs render from runner state via jobId.
+ */
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'gen'
+  at: number
+  /* user */
+  text?: string
+  contextOn?: boolean
+  images?: string[]
+  /* gen */
+  jobId?: string
+  adapterId?: string
+  adapterLabel?: string
+  state?: JobState
+  outputPath?: string
+  runDir?: string
+  textOut?: string
+  error?: string
+  seed?: string
+  durationMs?: number
+}
+
+/**
+ * A conversation, persisted as one JSON file under <runs>/chats/. Chats hold
+ * the dialogue; artifacts stay in their run directories — deleting a chat
+ * never deletes generations.
+ */
+export interface Chat {
+  id: string
+  modality: Modality
+  title: string
+  createdAt: number
+  updatedAt: number
+  /** Composer default for this chat; each user message records what it used. */
+  contextOn: boolean
+  messages: ChatMessage[]
 }

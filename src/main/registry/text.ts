@@ -59,7 +59,7 @@ function ollamaAdapter(model: string): Adapter {
         min: 512, max: 262144, advanced: true,
         help: 'Blank uses the model default. Raise for long prompts.' },
     ],
-    build({ prompt, params }: RunContext) {
+    build({ prompt, params, history }: RunContext) {
       const t = params.temperature
       const options: Record<string, unknown> = {
         temperature: typeof t === 'number' && Number.isFinite(t) ? t : 0.7,
@@ -67,11 +67,23 @@ function ollamaAdapter(model: string): Adapter {
       if (typeof params.num_ctx === 'number' && Number.isFinite(params.num_ctx)) {
         options.num_ctx = params.num_ctx
       }
-      const body: Record<string, unknown> = { model, prompt, options, stream: true }
-      if (params.system) body.system = String(params.system)
+      // With conversation history, use /api/chat so the model sees real turns;
+      // without it, /api/generate keeps one-shots free of chat templating.
+      let endpoint = 'generate'
+      let body: Record<string, unknown>
+      if (history?.length) {
+        endpoint = 'chat'
+        const messages: { role: string; content: string }[] = []
+        if (params.system) messages.push({ role: 'system', content: String(params.system) })
+        messages.push(...history, { role: 'user', content: prompt })
+        body = { model, messages, options, stream: true }
+      } else {
+        body = { model, prompt, options, stream: true }
+        if (params.system) body.system = String(params.system)
+      }
       return {
         bin: '/usr/bin/curl',
-        args: ['-sN', '--fail-with-body', `http://${OLLAMA_HOST}/api/generate`,
+        args: ['-sN', '--fail-with-body', `http://${OLLAMA_HOST}/api/${endpoint}`,
                '-d', JSON.stringify(body)],
       }
     },
@@ -88,8 +100,10 @@ function ollamaAdapter(model: string): Adapter {
           buf = buf.slice(nl + 1)
           if (!line) continue
           try {
-            const j = JSON.parse(line) as { response?: string; error?: string }
+            const j = JSON.parse(line) as
+              { response?: string; message?: { content?: string }; error?: string }
             if (j.response) out += j.response
+            if (j.message?.content) out += j.message.content
             if (j.error) out += `\n[ollama] ${j.error}\n`
           } catch {
             out += line // not JSON (curl error body, proxy page…) — show it raw

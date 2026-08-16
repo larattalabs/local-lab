@@ -6,8 +6,9 @@ import { allAdapters, availability, refresh, byModality } from './registry'
 import { toInfo } from './registry/types'
 import { runner } from './runner'
 import { deleteRun, listRuns } from './history'
+import { deleteChat, listChats, saveChat } from './chats'
 import { RUNS_DIR } from './env'
-import type { Modality, RunRequest } from '@shared/types'
+import type { Chat, Modality, RunRequest } from '@shared/types'
 import { resolve, sep } from 'node:path'
 
 /**
@@ -140,6 +141,9 @@ app.whenReady().then(() => {
   ipcMain.handle('files:reveal', (_e, p: string) => shell.showItemInFolder(p))
   ipcMain.handle('history:list', () => listRuns())
   ipcMain.handle('history:delete', (_e, dir: string) => deleteRun(dir))
+  ipcMain.handle('chats:list', () => listChats())
+  ipcMain.handle('chats:save', (_e, chat: Chat) => saveChat(chat))
+  ipcMain.handle('chats:delete', (_e, id: string) => deleteChat(id))
   ipcMain.handle('files:openRuns', () => shell.openPath(RUNS_DIR))
   ipcMain.handle('app:runsDir', () => RUNS_DIR)
 

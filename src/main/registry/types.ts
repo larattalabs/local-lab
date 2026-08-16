@@ -7,6 +7,8 @@ export interface RunContext {
   outPath: string
   /** Reference / init images, absolute paths. Empty unless `acceptsImages`. */
   images: string[]
+  /** Prior conversation turns; only text adapters consume this today. */
+  history?: { role: 'user' | 'assistant'; content: string }[]
 }
 
 export interface Spawn {
