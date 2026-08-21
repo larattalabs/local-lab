@@ -4,15 +4,20 @@ import { imageAdapters } from './image'
 import { videoAdapters } from './video'
 import { musicAdapters } from './music'
 import { textAdapters } from './text'
+import { omlxAdapters } from './omlx'
 import type { AvailabilityReport, Modality } from '@shared/types'
 
 let cached: Adapter[] | null = null
 
 export function allAdapters(): Adapter[] {
-  // Text adapters are discovered from `ollama list`, so the registry is built
-  // once per launch rather than being a module-level constant.
+  // Text adapters are discovered at runtime — from `ollama list` and from the
+  // oMLX server (or its model directory when the server is stopped) — so the
+  // registry is built once per launch rather than being a module-level constant.
   if (!cached) {
-    cached = [...imageAdapters, ...videoAdapters, ...musicAdapters, ...textAdapters()]
+    cached = [
+      ...imageAdapters, ...videoAdapters, ...musicAdapters,
+      ...textAdapters(), ...omlxAdapters(),
+    ]
   }
   return cached
 }
