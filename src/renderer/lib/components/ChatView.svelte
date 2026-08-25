@@ -28,6 +28,27 @@
     else store.contextDraft[modality] = !store.contextDraft[modality]
   }
 
+  /**
+   * Right-click menu for a sidebar conversation. Positioned at the cursor and
+   * clamped upward near the bottom edge so the menu can't open off-screen.
+   */
+  let menu = $state<{ x: number; y: number; id: string; title: string } | null>(null)
+
+  function openMenu(e: MouseEvent, c: { id: string; title: string }) {
+    e.preventDefault()
+    menu = {
+      x: Math.min(e.clientX, window.innerWidth - 240),
+      y: Math.min(e.clientY, window.innerHeight - 110),
+      id: c.id,
+      title: c.title,
+    }
+  }
+
+  async function removeChat(id: string) {
+    menu = null
+    await store.removeChat(modality, id)
+  }
+
   function liveJob(m: ChatMessage): Job | undefined {
     return m.jobId ? store.jobs.find((j) => j.id === m.jobId) : undefined
   }
@@ -77,6 +98,7 @@
                      ? 'bg-bench-700 text-bench-100'
                      : 'text-bench-300 hover:bg-bench-800'}"
             onclick={() => store.openChat(modality, c.id)}
+            oncontextmenu={(e) => openMenu(e, c)}
           >
             <div class="text-[12px] truncate pr-5">{c.title}</div>
             <div class="mono text-[10px] text-bench-600 mt-0.5">{when(c.updatedAt)}</div>
@@ -85,7 +107,7 @@
             class="absolute right-1.5 top-1.5 hidden group-hover:block mono text-[10px]
                    text-bench-500 hover:text-fault"
             title="Delete this chat. Its generations stay on disk and move to Earlier runs."
-            onclick={() => store.removeChat(modality, c.id)}
+            onclick={() => removeChat(c.id)}
           >✕</button>
         </div>
       {/each}
@@ -302,6 +324,33 @@
     <ParamPanel {modality} />
   </aside>
 </div>
+
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape') menu = null }} />
+
+{#if menu}
+  {@const m = menu}
+  <!-- Backdrop swallows the next click (or right-click) anywhere, matching
+       ModelDropdown's dismissal behaviour. -->
+  <button class="fixed inset-0 z-40 cursor-default" aria-label="Close menu"
+          onclick={() => (menu = null)}
+          oncontextmenu={(e) => { e.preventDefault(); menu = null }}></button>
+
+  <div class="fixed z-50 w-[228px] rounded-lg border border-bench-600 bg-bench-850
+              p-1 shadow-xl shadow-black/50"
+       style="left: {m.x}px; top: {m.y}px">
+    <div class="px-2 py-1 mono text-[10px] text-bench-600 truncate" title={m.title}>{m.title}</div>
+    <button
+      class="w-full text-left rounded px-2 py-1.5 text-[12px] text-bench-300
+             hover:bg-bench-800 hover:text-fault transition-colors"
+      onclick={() => removeChat(m.id)}
+    >
+      Delete conversation
+      <span class="block text-[10px] text-bench-600 leading-snug mt-0.5">
+        Generations are kept — they move to Earlier runs.
+      </span>
+    </button>
+  </div>
+{/if}
 
 {#snippet media(m: Modality, path: string, alt: string)}
   {#if m === 'image'}
