@@ -148,10 +148,11 @@ when deliberately pulling something new.
 
 ## Status
 
-Image and text are wired and working. Video (LTX) is wired against its real CLI.
-Music (ACE-Step) goes through `resources/workers/acestep_worker.py`, which is
-written against the documented pipeline API but **not yet verified end-to-end** —
-if it fails, the fix belongs in the worker, not the adapter.
+All four modalities are verified end-to-end on real hardware: text (Ollama,
+streamed), image (Krea 2 + FLUX.2 side by side), video (LTX-2.3 with audio),
+and music (ACE-Step text-to-music and remix/cover both). ACE-Step runs through
+`resources/workers/acestep_worker.py`; if a future ACE-Step update breaks it,
+the fix belongs in the worker, not the adapter.
 
 Generated media is written to `~/AI/local-lab-runs` and never into the repo.
 
