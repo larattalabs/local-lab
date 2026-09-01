@@ -25,7 +25,7 @@ macOS on Apple Silicon, with as many of these as you care about:
 | Image | [mflux](https://github.com/filipstrand/mflux) CLIs | `~/.local/bin/mflux-generate*` |
 | Image | Krea 2 (MLX) | `~/AI/krea2-mlx` |
 | Video | `mlx_video` (LTX-2.3) | `~/AI/venvs/ltx-av` |
-| Music | ACE-Step v1.5 | `~/AI/ace-step` |
+| Music | ACE-Step v1.5 (text-to-music + remix/cover) | `~/AI/ace-step` |
 | Text | [Ollama](https://ollama.com) | `ollama` on PATH |
 
 Anything missing simply shows as unavailable with the path it looked for — the
@@ -113,6 +113,21 @@ those parameters into a command line:
 ```
 
 The UI builds itself from `params`. There is nothing else to wire.
+
+## Remixing a song (ACE-Step cover mode)
+
+The Music section has two ACE-Step entries. **remix / cover** takes a song and
+a style caption and regenerates the track in that style while keeping the
+source's structure and melody — ACE-Step's `cover` task, which its own Gradio
+UI calls "Remix Mode". Attach an audio file, describe the target
+("energetic synthwave, driving 80s basslines"), optionally paste lyrics to
+keep or swap the vocals, and run.
+
+One knob matters: **cover strength** (0–1). At 1.0 the output hugs the
+original notes; around 0.2 it's loose style transfer; 0.7 is a good remix
+default. Output duration is locked to the source. BPM/key locks are on the
+advanced shelf. Covers skip ACE-Step's 5Hz language model entirely (per its
+API docs), so they start *faster* than text-to-music.
 
 ## Two design decisions worth knowing
 

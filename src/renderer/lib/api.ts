@@ -15,6 +15,7 @@ interface LabApi {
   saveChat(chat: Chat): Promise<void>
   deleteChat(id: string): Promise<void>
   pickImages(): Promise<string[]>
+  pickAudio(): Promise<string[]>
   reveal(p: string): Promise<void>
   openRuns(): Promise<void>
   runsDir(): Promise<string>

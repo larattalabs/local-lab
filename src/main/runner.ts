@@ -118,9 +118,10 @@ class Runner {
 
     // Editing/variation CLIs hard-require an input image; catch it here with
     // a sentence instead of letting argparse produce a usage dump.
-    if (adapter.requiresImage && !(job.images?.length)) {
+    if ((adapter.requiresImage || adapter.requiresAudio) && !(job.images?.length)) {
+      const kind = adapter.requiresAudio ? 'a source audio file' : 'an input image'
       job.state = 'error'
-      job.error = `${adapter.label} needs an input image — attach one above the prompt and rerun.`
+      job.error = `${adapter.label} needs ${kind} — attach one above the prompt and rerun.`
       job.finishedAt = Date.now()
       this.emit(job)
       return this.pump()

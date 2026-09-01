@@ -42,7 +42,28 @@ def main() -> int:
     ap.add_argument("--config-path", default="acestep-v15-xl-turbo")
     ap.add_argument("--lm-model-path", default="acestep-5Hz-lm-4B")
     ap.add_argument("--output", required=True)
+    # --- cover / remix ("Remix Mode" in ACE-Step's own Gradio UI) ---
+    ap.add_argument("--task", default="text2music",
+                    choices=["text2music", "cover"],
+                    help="cover = transform --src-audio into the style described "
+                         "by --prompt, keeping the source's structure/melody")
+    ap.add_argument("--src-audio", default=None,
+                    help="source song to cover; duration is locked to it")
+    ap.add_argument("--cover-strength", type=float, default=0.7,
+                    help="0.0-1.0; 1.0 hugs the original notes, ~0.2 is loose "
+                         "style transfer")
+    ap.add_argument("--bpm", type=int, default=None,
+                    help="lock tempo; omit for auto-detect")
+    ap.add_argument("--keyscale", default="",
+                    help='lock key, e.g. "E Major" or "Am"; omit for auto')
     args = ap.parse_args()
+
+    if args.task == "cover" and not args.src_audio:
+        print("--task cover requires --src-audio", file=sys.stderr)
+        return 2
+    if args.src_audio and not Path(args.src_audio).is_file():
+        print(f"source audio not found: {args.src_audio}", file=sys.stderr)
+        return 2
 
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -67,18 +88,24 @@ def main() -> int:
         return 1
 
     llm = LLMHandler()
-    msg, ok = llm.initialize(
-        checkpoint_dir=os.path.join(ACE_ROOT, "checkpoints"),
-        lm_model_path=args.lm_model_path, backend="mlx",
-        device="auto", offload_to_cpu=False, dtype=None,
-    )
-    if not ok:
-        print(f"ACE-Step LM init failed: {msg}", file=sys.stderr)
-        return 1
+    if args.task == "cover":
+        # The pipeline skips the 5Hz LM for cover/repaint/extract even when
+        # thinking=True (see docs/en/API.md) — conditioning comes straight from
+        # caption+lyrics+src_audio. Don't load 10+ GB that will never run.
+        llm = None
+    else:
+        msg, ok = llm.initialize(
+            checkpoint_dir=os.path.join(ACE_ROOT, "checkpoints"),
+            lm_model_path=args.lm_model_path, backend="mlx",
+            device="auto", offload_to_cpu=False, dtype=None,
+        )
+        if not ok:
+            print(f"ACE-Step LM init failed: {msg}", file=sys.stderr)
+            return 1
 
-    params = GenerationParams(
-        task_type="text2music",
-        thinking=True,
+    kwargs = dict(
+        task_type=args.task,
+        thinking=args.task != "cover",  # LM is skipped for cover regardless
         caption=args.prompt,
         lyrics=args.lyrics,
         instrumental=not args.lyrics.strip(),
@@ -88,6 +115,14 @@ def main() -> int:
         guidance_scale=args.cfg_scale,
         seed=args.seed if args.seed is not None else -1,  # -1 = GenerationParams' "unset"
     )
+    if args.task == "cover":
+        kwargs.update(src_audio=args.src_audio, audio_cover_strength=args.cover_strength)
+        kwargs.pop("duration")  # locked to the source; the pipeline ignores it anyway
+    if args.bpm is not None:
+        kwargs["bpm"] = args.bpm
+    if args.keyscale.strip():
+        kwargs["keyscale"] = args.keyscale.strip()
+    params = GenerationParams(**kwargs)
     config = GenerationConfig(batch_size=1, audio_format="wav")
 
     with tempfile.TemporaryDirectory() as save_dir:

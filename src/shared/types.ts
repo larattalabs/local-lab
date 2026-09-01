@@ -50,6 +50,10 @@ export interface AdapterInfo {
    *  without one fails immediately with a clear message instead of a
    *  argparse traceback. */
   requiresImage?: boolean
+  /** Accepts an input audio file (ACE-Step cover/remix). */
+  acceptsAudio?: boolean
+  /** The task cannot run without a source audio file. */
+  requiresAudio?: boolean
   /** Streams tokens to stdout instead of writing a file. */
   streams?: boolean
   /** Rough peak memory in GB, shown as a warning before running big models. */

@@ -21,6 +21,11 @@
       (id) => store.adapters.find((a) => a.id === id)?.acceptsImages
     )
   )
+  const wantsAudio = $derived(
+    store.selected[modality].some(
+      (id) => store.adapters.find((a) => a.id === id)?.acceptsAudio
+    )
+  )
   const contextOn = $derived(chat ? chat.contextOn : store.contextDraft[modality])
 
   function toggleContext() {
@@ -289,13 +294,22 @@
             context
           </button>
 
-          {#if wantsImages}
+          {#if wantsImages || wantsAudio}
             <button
               class="mono text-[11px] px-2 py-1 rounded border border-bench-700 text-bench-300
                      hover:border-bench-600 hover:text-bench-100"
-              onclick={async () => (store.images = await window.lab.pickImages())}
+              onclick={async () =>
+                (store.images = wantsAudio
+                  ? await window.lab.pickAudio()
+                  : await window.lab.pickImages())}
             >
-              {store.images.length ? `${store.images.length} image(s)` : 'attach'}
+              {store.images.length
+                ? wantsAudio
+                  ? store.images[0].split('/').pop()
+                  : `${store.images.length} image(s)`
+                : wantsAudio
+                  ? 'attach audio'
+                  : 'attach'}
             </button>
             {#if store.images.length}
               <button class="mono text-[11px] text-bench-400 hover:text-fault"

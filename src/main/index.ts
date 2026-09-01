@@ -131,6 +131,13 @@ app.whenReady().then(() => {
   ipcMain.handle('jobs:cancel', (_e, id: string) => runner.cancel(id))
   ipcMain.handle('jobs:clearFinished', () => runner.clearFinished())
 
+  ipcMain.handle('files:pickAudio', async () => {
+    const r = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'Audio', extensions: ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg', 'aiff'] }],
+    })
+    return r.canceled ? [] : r.filePaths
+  })
   ipcMain.handle('files:pickImages', async () => {
     const r = await dialog.showOpenDialog({
       properties: ['openFile', 'multiSelections'],

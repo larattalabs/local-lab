@@ -49,6 +49,8 @@ export function toInfo(a: Adapter): AdapterInfo {
     params: a.params,
     acceptsImages: a.acceptsImages,
     requiresImage: a.requiresImage,
+    acceptsAudio: a.acceptsAudio,
+    requiresAudio: a.requiresAudio,
     streams: a.streams,
     approxPeakGb: a.approxPeakGb,
   }

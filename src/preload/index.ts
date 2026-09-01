@@ -25,6 +25,7 @@ const api = {
   deleteChat: (id: string): Promise<void> => ipcRenderer.invoke('chats:delete', id),
 
   pickImages: (): Promise<string[]> => ipcRenderer.invoke('files:pickImages'),
+  pickAudio: (): Promise<string[]> => ipcRenderer.invoke('files:pickAudio'),
   reveal: (p: string): Promise<void> => ipcRenderer.invoke('files:reveal', p),
   openRuns: (): Promise<void> => ipcRenderer.invoke('files:openRuns'),
   runsDir: (): Promise<string> => ipcRenderer.invoke('app:runsDir'),
