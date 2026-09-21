@@ -147,6 +147,14 @@ const MFLUX: MfluxSpec[] = [
   { id: 'qwen-image', label: 'Qwen Image', bin: 'mflux-generate-qwen',
     notes: 'Strong at rendering legible text inside images.',
     defaultSteps: 20, approxPeakGb: 28 },
+  // Qwen-Image 2.1 — a NEW 7B single-stream architecture, not a point release
+  // of the 20B original above; needs mflux >= 0.20 (mflux-generate-qwen-2.1).
+  // Not distilled: 40 steps is the tuned default (~78s at 1024² on an M5 Max).
+  // mflux ports txt2img + img2img only — upstream's multi-reference editing
+  // needs the Qwen3-VL vision tower, which the port defers.
+  { id: 'qwen-image-2.1', label: 'Qwen Image 2.1', bin: 'mflux-generate-qwen-2.1',
+    notes: '7B, native 2K. Typography, portrait lighting, fine detail. 40 steps — slow but sharp.',
+    defaultSteps: 40, approxPeakGb: 46, singleImage: true },
   // qwen-edit takes --image-paths (variadic, REQUIRED) and has no strength
   // flag — verified against the installed CLI, not assumed from its siblings.
   { id: 'qwen-image-edit', label: 'Qwen Image Edit', bin: 'mflux-generate-qwen-edit',
@@ -181,6 +189,10 @@ function mfluxAdapter(spec: MfluxSpec): Adapter {
     { key: 'guidance', label: 'Guidance', type: 'float', default: null,
       min: 0, max: 20, step: 0.5, advanced: true,
       help: 'Blank uses the model default.' },
+    { key: 'negative', label: 'Negative prompt', type: 'string', default: '', advanced: true,
+      help: 'Blank = off. On Qwen Image 2.1 this only takes effect together with ' +
+            'Guidance > 1 — the two switch on true CFG, a second forward pass per ' +
+            'step that roughly doubles the time. Alone, either one does nothing.' },
     { key: 'quantize', label: 'Quantize', type: 'select', default: spec.quantize ?? '', advanced: true,
       options: [
         { value: '', label: 'none (full precision)' },
@@ -235,6 +247,7 @@ function mfluxAdapter(spec: MfluxSpec): Adapter {
         '--output', outPath)
       if (p.seed != null && p.seed !== '') args.push('--seed', String(p.seed))
       if (p.guidance != null && p.guidance !== '') args.push('--guidance', String(p.guidance))
+      if (p.negative) args.push('--negative-prompt', String(p.negative))
       return { bin, args }
     },
   }
