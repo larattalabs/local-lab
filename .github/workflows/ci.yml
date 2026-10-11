@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# The app runs local models on Apple Silicon, so CI checks the code rather than
+# running it: typecheck, a production build, and the Python workers compile.
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # The Electron binary isn't needed to typecheck or build.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@11.6.0 --activate
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm build
+      - name: Compile Python workers
+        run: python3 -m py_compile resources/workers/*.py
