@@ -158,4 +158,4 @@ Generated media is written to `~/AI/local-lab-runs` and never into the repo.
 
 ## Licence
 
-MIT
+[MIT](LICENSE) © Laratta Labs
