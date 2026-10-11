@@ -52,5 +52,7 @@
         "dmg"
       ]
     }
-  }
+  },
+  "author": "Laratta Labs",
+  "license": "MIT"
 }
