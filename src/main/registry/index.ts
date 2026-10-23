@@ -5,6 +5,7 @@ import { videoAdapters } from './video'
 import { musicAdapters } from './music'
 import { textAdapters } from './text'
 import { omlxAdapters } from './omlx'
+import { ds4Adapters } from './ds4'
 import type { AvailabilityReport, Modality } from '@shared/types'
 
 let cached: Adapter[] | null = null
@@ -16,7 +17,7 @@ export function allAdapters(): Adapter[] {
   if (!cached) {
     cached = [
       ...imageAdapters, ...videoAdapters, ...musicAdapters,
-      ...textAdapters(), ...omlxAdapters(),
+      ...textAdapters(), ...omlxAdapters(), ...ds4Adapters,
     ]
   }
   return cached
