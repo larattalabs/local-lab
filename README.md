@@ -27,6 +27,7 @@ macOS on Apple Silicon, with as many of these as you care about:
 | Video | `mlx_video` (LTX-2.3) | `~/AI/venvs/ltx-av` |
 | Music | ACE-Step v1.5 (text-to-music + remix/cover) | `~/AI/ace-step` |
 | Text | [Ollama](https://ollama.com) | `ollama` on PATH |
+| Text | [DwarfStar / ds4](https://github.com/antirez/ds4) (V4.1 Flash 1017 Q2) | `~/Developer/_infra/ds4-v41` + `~/AI/ds4-gguf/v41-1017` |
 
 Anything missing simply shows as unavailable with the path it looked for — the
 app runs fine with only some of them installed.
@@ -113,6 +114,30 @@ those parameters into a command line:
 ```
 
 The UI builds itself from `params`. There is nothing else to wire.
+
+## DeepSeek V4.1 Flash 1017
+
+In Text, select **DeepSeek V4.1 Flash 1017 · Q2 · abliterated**. This entry uses
+the locally patched GGUF; it does not download or modify weights. It supports
+streaming replies, system prompts and multi-turn conversation history. Reasoning
+starts off; raise it in the parameter panel when needed, allowing enough output
+tokens for thinking and the answer.
+
+The 341 GiB file requires SSD streaming on a 128 GB Mac. Each job starts a
+private loopback DwarfStar server and stops it on completion or cancellation,
+releasing memory before another queued model runs. Loading happens on each turn;
+expect a delay before tokens appear. The existing V4/omp setup is independent.
+Avoid running another large inference service at the same time; DwarfStar's
+instance lock remains enabled.
+
+Paths can be overridden with `LOCALLAB_DS4_DIR` and `LOCALLAB_DS4_MODEL`.
+`LOCALLAB_DS4_CACHE_EXPERTS` optionally sets the runtime's expert-cache budget
+(for example `64GB`); leaving it unset uses automatic sizing. The worker uses
+macOS's `/usr/bin/python3` and needs no Python packages. Advanced parameters
+include allocated context length (default 32768).
+
+Run the worker's protocol and cancellation checks without loading a model:
+`python3 scripts/test-ds4-worker.py`.
 
 ## Remixing a song (ACE-Step cover mode)
 
