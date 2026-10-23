@@ -13,7 +13,7 @@ export const MODALITIES: { id: Modality; label: string; blurb: string }[] = [
   { id: 'image', label: 'Image', blurb: 'Diffusion and flow models — Krea 2, FLUX, Qwen, Z-Image' },
   { id: 'video', label: 'Video', blurb: 'Image-to-video and text-to-video' },
   { id: 'music', label: 'Music', blurb: 'Text-to-music and audio generation' },
-  { id: 'text', label: 'Text', blurb: 'Local LLMs via Ollama and MLX' },
+  { id: 'text', label: 'Text', blurb: 'Local LLMs via Ollama, MLX and DwarfStar' },
 ]
 
 export type ParamType = 'int' | 'float' | 'string' | 'select' | 'bool' | 'seed'
