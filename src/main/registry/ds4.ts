@@ -14,7 +14,7 @@ const THINK_RULE = '\n───\n'
 
 export const ds4Adapters: Adapter[] = [{
   id: 'ds4:deepseek-v4.1-flash-1017',
-  label: 'DeepSeek V4.1 Flash 1017 · Q2 · customized',
+  label: 'DeepSeek V4.1 Flash 1017 · Q2',
   modality: 'text',
   family: 'ds4',
   notes: 'DwarfStar / Metal with SSD streaming. Loads for each run and releases memory afterward.',

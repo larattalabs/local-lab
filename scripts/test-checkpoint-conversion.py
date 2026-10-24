@@ -6,7 +6,7 @@ import unittest
 
 import torch
 
-spec = importlib.util.spec_from_file_location('prepare_profile', Path(__file__).with_name('prepare-local-qwen.py'))
+spec = importlib.util.spec_from_file_location('prepare_checkpoint', Path(__file__).with_name('expand-int8-checkpoint.py'))
 prepare = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(prepare)
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Expand Local Qwen profile's published INT8 ConvRot DiT for an MLX checkpoint.
+"""Expand a tensorwise INT8 ConvRot DiT for an MLX checkpoint.
 
 Uses the regular, symmetric Hadamard rotation specified by comfy-kitchen:
 https://github.com/Comfy-Org/comfy-kitchen/blob/main/comfy_kitchen/tensor/int8_utils.py

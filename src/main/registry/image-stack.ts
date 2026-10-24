@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { AI_ROOT } from '../env'
@@ -24,12 +24,6 @@ const quantize: ParamSpec = {
   options: [{ value: '', label: 'Full precision' }, { value: '8', label: '8-bit' },
     { value: '6', label: '6-bit' }, { value: '4', label: '4-bit' }],
 }
-const encoder: ParamSpec = {
-  key: 'encoder', label: 'Text encoder', type: 'select', default: 'stock',
-  options: [{ value: 'stock', label: 'Stock' }, { value: 'alternate', label: 'Alternate (customized)' }],
-  help: 'Changes prompt encoding. The image model and VAE stay the same.',
-}
-
 interface ImageModel {
   id: string
   label: string
@@ -46,22 +40,51 @@ interface ImageModel {
   stepReuse?: boolean
 }
 
+interface LocalChoice { id: string; label: string; suffix: string }
+interface LocalLora { id: string; label: string; path: string; scale?: number }
+interface LocalProfiles {
+  models?: ImageModel[]
+  encoders?: Record<string, LocalChoice[]>
+  loras?: LocalLora[]
+}
+const configPath = process.env.LOCALLAB_IMAGE_PROFILES ?? join(MODELS, 'profiles.json')
+const local: LocalProfiles = existsSync(configPath) ? JSON.parse(readFileSync(configPath, 'utf8')) : {}
+const commands = new Set(['mflux-generate-qwen-2.1', 'mflux-generate-qwen-2.1-edit',
+  'mflux-generate-flux3', 'mflux-generate-flux3-edit'])
+for (const spec of local.models ?? []) {
+  if (!spec.id || !spec.label || !spec.model || !commands.has(spec.command) || !spec.base
+    || !Number.isInteger(spec.steps) || spec.steps < 1 || spec.steps > 60) {
+    throw new Error(`Invalid local image profile in ${configPath}`)
+  }
+}
+
 function imageModel(spec: ImageModel): Adapter {
   const model = join(MODELS, spec.model)
   const bin = BIN(spec.command)
+  const family = spec.qwen ? 'qwen-2.1' : 'flux-3'
+  const encoders = local.encoders?.[family] ?? []
+  const loras = spec.qwen ? [] : local.loras ?? []
+  const encoder: ParamSpec = {
+    key: 'encoder', label: 'Text encoder', type: 'select', default: 'stock',
+    options: [{ value: 'stock', label: 'Stock' }, ...encoders.map((e) => ({ value: e.id, label: e.label }))],
+    help: 'Changes prompt encoding while retaining the image transformer and VAE.',
+  }
   const precision: ParamSpec = spec.expandedInt8 ? { ...quantize,
     options: quantize.options?.map((option) => option.value === ''
       ? { ...option, label: 'BF16 (expanded INT8)' } : option),
     help: 'Retains the source INT8 approximation. Lower precision quantizes these expanded weights again.',
   } : quantize
   return {
-    id: spec.id, label: spec.label, family: spec.qwen ? 'qwen-2.1' : 'flux-3', modality: 'image',
+    id: spec.id, label: spec.label, family, modality: 'image',
     notes: spec.notes ?? (spec.edit ? 'Instruction-based editing with up to ten reference images.'
       : `${spec.steps}-step generation. Local MLX on Apple Silicon.`),
     outputExt: 'png', acceptsImages: Boolean(spec.edit), requiresImage: Boolean(spec.edit),
     requires: [bin, join(model, 'transformer'), join(model, 'text_encoder'), join(model, 'vae')],
     approxPeakGb: spec.qwen ? 46 : 32,
-    params: [aspect, ...(spec.qwen ? [encoder] : []),
+    params: [aspect, ...(encoders.length ? [encoder] : []),
+      ...(loras.length ? [{ key: 'lora', label: 'Image adapter', type: 'select', default: '',
+        options: [{ value: '', label: 'Off' }, ...loras.map((l) => ({ value: l.id, label: l.label }))],
+      } satisfies ParamSpec] : []),
       ...(!spec.turbo ? [{ key: 'steps', label: 'Steps', type: 'int', default: spec.steps,
         min: 1, max: 60 } satisfies ParamSpec] : []), seed, precision,
       ...(spec.qwen && !spec.turbo ? [
@@ -81,13 +104,23 @@ function imageModel(spec: ImageModel): Adapter {
       if (spec.edit && (!images.length || images.length > 10)) {
         throw new Error(`${spec.label} needs between one and ten reference images.`)
       }
-      const alternate = spec.qwen && params.encoder === 'alternate'
-      const path = alternate ? `${model}-alternate` : model
+      const choice = params.encoder && params.encoder !== 'stock'
+        ? encoders.find((e) => e.id === params.encoder) : undefined
+      if (params.encoder && params.encoder !== 'stock' && !choice) throw new Error('Unknown text encoder choice.')
+      const path = choice ? model + choice.suffix : model
       if (!existsSync(join(path, 'text_encoder'))) {
-        throw new Error(`${alternate ? 'Alternate encoder' : spec.label} is not installed at ${path}. See the image setup instructions.`)
+        throw new Error(`Selected text encoder is not installed at ${path}. See the image setup instructions.`)
       }
       const [w, h] = sizes[String(params.aspect) as keyof typeof sizes] ?? sizes['1:1']
       const args = ['--model', path, '--base-model', spec.base]
+      if (params.lora) {
+        const lora = loras.find((l) => l.id === params.lora)
+        if (!lora) throw new Error('Unknown image adapter choice.')
+        const file = join(MODELS, lora.path)
+        if (!existsSync(file)) throw new Error('Selected image adapter is not installed.')
+        if (!Number.isFinite(lora.scale ?? 1)) throw new Error('Invalid image adapter scale.')
+        args.push('--lora', file, String(lora.scale ?? 1))
+      }
       if (spec.edit) args.push('--image-paths', ...images)
       args.push('--prompt', prompt, '--width', String(w), '--height', String(h),
         '--steps', String(spec.turbo ? 8 : params.steps ?? spec.steps), '--output', outPath)
@@ -139,15 +172,14 @@ export const imageStackAdapters: Adapter[] = [
     base: 'qwen-image-2.1-turbo', command: 'mflux-generate-qwen-2.1-edit', steps: 8, turbo: true, qwen: true, edit: true }),
   imageModel({ id: 'qwen-image-2.1-edit', label: 'Qwen Image 2.1 — edit', model: 'qwen-image-2.1',
     base: 'qwen-image-2.1', command: 'mflux-generate-qwen-2.1-edit', steps: 40, qwen: true, edit: true }),
-  imageModel({ id: 'qwen-local-v4', label: 'Local Qwen profile', model: 'qwen-local-v4',
-    base: 'qwen-image-2.1', command: 'mflux-generate-qwen-2.1', steps: 25, qwen: true, guided: true, expandedInt8: true, stepReuse: true,
-    notes: 'Local profile’s Qwen 2.1 realism finetune. Published INT8 weights expanded to BF16. 25 steps.' }),
-  imageModel({ id: 'qwen-local-v4-edit', label: 'Local Qwen profile — edit', model: 'qwen-local-v4',
-    base: 'qwen-image-2.1', command: 'mflux-generate-qwen-2.1-edit', steps: 25, qwen: true, edit: true, guided: true, expandedInt8: true,
-    notes: 'Local Qwen reference editing. Published INT8 weights expanded to BF16. One to ten images.' }),
   imageModel({ id: 'flux3-klein', label: 'FLUX 3 Image Klein', model: 'flux3-image-klein',
     base: 'flux3-image-klein', command: 'mflux-generate-flux3', steps: 16 }),
   imageModel({ id: 'flux3-klein-edit', label: 'FLUX 3 Image Klein — edit', model: 'flux3-image-klein',
     base: 'flux3-image-klein', command: 'mflux-generate-flux3-edit', steps: 16, edit: true }),
+  ...(local.models ?? []).map(imageModel),
   seedvr2,
 ]
+
+if (new Set(imageStackAdapters.map((a) => a.id)).size !== imageStackAdapters.length) {
+  throw new Error(`Duplicate image profile IDs in ${configPath}`)
+}

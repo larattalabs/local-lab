@@ -119,77 +119,70 @@ The UI builds itself from `params`. There is nothing else to wire.
 ## Image generation, editing and upscaling
 
 The Image picker includes Qwen Image 2.1 Turbo (8 steps), its reference editor,
-the full Qwen Image 2.1 editor (40 steps), Local profile's Local Qwen profile (25 steps,
-generation and editing), FLUX 3 Image Klein (16 steps, generation and editing),
-and SeedVR2 upscaling. Editing takes one to ten attached reference images.
-With context on, the previous finished image can serve as the next reference.
-SeedVR2 takes exactly one image and needs no text prompt; its size setting
-supports 2×, 3×, or a fixed shortest edge.
+the full Qwen Image 2.1 editor (40 steps), FLUX 3 Image Klein (16 steps,
+generation and editing), and SeedVR2 upscaling. Editing takes one to ten
+attached reference images. With context on, the previous finished image can
+serve as the next reference. SeedVR2 takes one image and needs no text prompt.
 
-Qwen Turbo, the full Qwen editor, and Local Qwen offer **Stock / Alternate** in the
-Text encoder selector. Alternate changes the encoder; it does not replace the
-image transformer or add visual training. Original checkpoints stay intact.
-The full Qwen generation entry retains its strength-based img2img controls.
-
-Use mflux 0.23.0 on Python 3.12. Pillow is pinned because 13.0.0 fails to import
-on this runtime:
+Use mflux 0.23.0 on Python 3.12 with Pillow 12.3.0:
 
 ```sh
 uv tool install --force --python 3.12 --with 'pillow==12.3.0' 'mflux==0.23.0'
 ~/.local/share/uv/tools/mflux/bin/python scripts/setup-image-stack.py
 ```
 
-FLUX 3 requires accepting access on its Hugging Face model page first. The
-setup script uses the existing HF credentials without printing them, downloads
-pinned revisions into `~/AI/huggingface`, and composes checkpoint views under
-`~/AI/image-stack` by symlink. Qwen Turbo shares the base Qwen3-VL encoder;
-Alternate variants share all remaining components. SeedVR2 reuses the existing
-`~/ComfyUI-Shared/models/SEEDVR2` files without copying them.
-Alternate's encoder view adds the legacy RoPE config field names needed by
-mflux's reference editor; its cached config and weight files stay intact.
+FLUX 3 requires accepting its Hugging Face model license. The setup downloads
+pinned revisions into `~/AI/huggingface` and composes views under
+`~/AI/image-stack`. Turbo shares the base encoder. SeedVR2 reuses
+`~/ComfyUI-Shared/models/SEEDVR2` without copying files. Normal runs stay offline.
 
-Local Qwen profile defaults to 25 steps, guidance 3 and a short negative quality prompt;
-set guidance to 1 to trade conditioning for speed. Its publicly available INT8
-ConvRot checkpoint is expanded once to BF16, including inverse rotation and
-unpacking the fused SwiGLU matrices. This retains the source's
-INT8 approximation; it is not the author's original BF16 checkpoint. Source
-revisions and conversion details are recorded beside the model views.
+Personal checkpoints and optional encoders/LoRAs belong in an external
+`~/AI/image-stack/profiles.json`, never in source control. Override this with
+`LOCALLAB_IMAGE_PROFILES`. Example:
 
-Override paths with `LOCALLAB_IMAGE_MODELS_DIR`, `LOCALLAB_SEEDVR2_DIR`,
-`LOCALLAB_AI_ROOT`, `LOCALLAB_HF_HOME` or `LOCALLAB_HF_HUB_CACHE`. Normal runs remain offline. Model files
-and generated images are never stored in Git.
+```json
+{
+  "models": [{
+    "id": "qwen-local", "label": "Qwen local profile", "model": "qwen-local",
+    "base": "qwen-image-2.1", "command": "mflux-generate-qwen-2.1",
+    "steps": 25, "qwen": true, "guided": true, "stepReuse": true
+  }],
+  "encoders": {
+    "flux-3": [{"id": "alternate", "label": "Alternate", "suffix": "-alternate"}]
+  },
+  "loras": [{"id": "photo", "label": "Photo style", "path": "adapters/photo.safetensors", "scale": 1}]
+}
+```
 
-Checks: `node scripts/test-image-stack.mjs` verifies adapter contracts without
-models. `~/.local/share/uv/tools/mflux/bin/python scripts/test-checkpoint-math.py`
-checks the expansion math. `node scripts/smoke-image-stack.mjs MODEL OUTPUT_DIR
-[REFERENCE_IMAGE] [stock|alternate]` runs a real adapter on installed weights.
+Encoder suffixes select composed model views (for example,
+`flux3-image-klein-alternate`) that share the transformer and VAE. LoRAs appear
+on FLUX generation and editing entries. Keep source revisions, licenses and
+conversion records beside private model assets. The generic
+`scripts/expand-int8-checkpoint.py` expands compatible tensorwise INT8 ConvRot
+checkpoints to BF16, preserving the source quantization approximation.
+`scripts/prepare_qwen_encoder.py` supplies legacy RoPE config aliases for
+encoders that need them without changing cached files.
 
-Measured on an M5 Max / 128 GB, including loading, at 1024×1024 and default
-full precision (one run per case; these are smoke-test timings):
+Custom Qwen profiles can expose guidance, negative prompts and optional step
+reuse. Guidance above 1 with a negative prompt doubles the denoising passes.
+Step reuse is off by default and can change detail and composition.
 
-| Model | Generation | Reference edit |
-|---|---:|---:|
-| Qwen 2.1 Turbo | 40 s | 52 s |
-| Qwen 2.1 Turbo + Alternate | 64 s | 54 s |
-| Qwen 2.1 | 162 s | 186 s |
-| Local Qwen profile, guidance 3 | 190 s | 240 s |
-| FLUX 3 Image Klein | 46 s | 97 s |
+Override asset paths with `LOCALLAB_IMAGE_MODELS_DIR`, `LOCALLAB_SEEDVR2_DIR`,
+`LOCALLAB_AI_ROOT`, `LOCALLAB_HF_HOME` or `LOCALLAB_HF_HUB_CACHE`.
+Checks: `node scripts/test-image-stack.mjs` verifies adapter contracts;
+`~/.local/share/uv/tools/mflux/bin/python scripts/test-checkpoint-conversion.py`
+checks expansion math. Run installed models with
+`node scripts/smoke-image-stack.mjs MODEL OUTPUT_DIR [REFERENCE_IMAGE] [ENCODER_ID]`.
 
-SeedVR2's 256→512 test took 15 s. Larger inputs increase both time and memory.
-
-For Local Qwen generation, the advanced **Step reuse** selector can reuse 25% or
-50% of predictions; it is off by default and can alter details. A separate
-1024² neutral-portrait test measured 182 s at 25 steps / guidance 3, 99 s with
-50% step reuse at the same settings, and 79 s at 20 steps / guidance 1. Combining
-20 steps / guidance 1 with 50% reuse took 44 s through the native UI.
-Guidance 1 disables the negative-prompt pass and changes conditioning. These
-are single-prompt comparisons. Reference editing uses a different caching
-implementation and does not expose this generation-only flag.
+Measured on an M5 Max / 128 GB at 1024², including loading: Qwen Turbo generation
+40 s / editing 52 s; full Qwen generation 162 s / editing 186 s; FLUX 3 generation
+46 s / editing 97 s. SeedVR2's 256→512 test took 15 s. These are single-run smoke
+timings, not a broad quality ranking.
 
 ## DeepSeek V4.1 Flash 1017
 
-In Text, select **DeepSeek V4.1 Flash 1017 · Q2 · customized**. This entry uses
-the locally patched GGUF; it does not download or modify weights. It supports
+In Text, select **DeepSeek V4.1 Flash 1017 · Q2**. This entry uses
+the configured local GGUF; it does not download or modify weights. It supports
 streaming replies, system prompts and multi-turn conversation history. Reasoning
 starts off; raise it in the parameter panel when needed, allowing enough output
 tokens for thinking and the answer.
@@ -245,7 +238,7 @@ when deliberately pulling something new.
 ## Status
 
 All four modalities are verified end-to-end on real hardware: text (Ollama,
-streamed), image (Krea 2, Qwen 2.1/Turbo, Local Qwen, FLUX.2/3 and SeedVR2), video (LTX-2.3 with audio),
+streamed), image (Krea 2, Qwen 2.1/Turbo, local Qwen profile, FLUX.2/3 and SeedVR2), video (LTX-2.3 with audio),
 and music (ACE-Step text-to-music and remix/cover both). ACE-Step runs through
 `resources/workers/acestep_worker.py`; if a future ACE-Step update breaks it,
 the fix belongs in the worker, not the adapter.
