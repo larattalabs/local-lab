@@ -21,12 +21,14 @@ const prompt = process.env.LOCALLAB_SMOKE_PROMPT ?? (reference
   : 'A red ceramic teapot with a curved spout and a round lid on a light wooden table. Soft daylight, plain pale gray background, product photograph, no text.')
 const output = join(dir, 'output.png')
 const spec = adapter.build({ prompt, params, outPath: output, images: references.map((p) => resolve(p)) })
+const aiRoot = process.env.LOCALLAB_AI_ROOT ?? join(homedir(), 'AI')
+const hfHome = process.env.LOCALLAB_HF_HOME ?? join(aiRoot, 'huggingface')
 const started = Date.now()
 writeFileSync(join(dir, 'request.json'), JSON.stringify({ id, prompt, params, references, spec }, null, 2))
 const log = openSync(join(dir, 'run.log'), 'w')
 const child = spawn(spec.bin, spec.args, { cwd: spec.cwd,
-  env: { ...process.env, HF_HOME: join(homedir(), 'AI', 'huggingface'),
-    HF_HUB_CACHE: join(homedir(), 'AI', 'huggingface', 'hub'), HF_HUB_OFFLINE: '1', ...spec.env },
+  env: { ...process.env, HF_HOME: hfHome,
+    HF_HUB_CACHE: process.env.LOCALLAB_HF_HUB_CACHE ?? join(hfHome, 'hub'), HF_HUB_OFFLINE: '1', ...spec.env },
   stdio: ['ignore', log, log] })
 const result = await new Promise((res, rej) => {
   child.on('error', rej)

@@ -10,10 +10,12 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from prepare_qwen_encoder import prepare_encoder
 
 AI = Path(os.environ.get('LOCALLAB_AI_ROOT', str(Path.home() / 'AI')))
 ROOT = Path(os.environ.get('LOCALLAB_IMAGE_MODELS_DIR', str(AI / 'image-stack')))
-os.environ.setdefault('HF_HOME', os.environ.get('LOCALLAB_HF_HOME', str(AI / 'huggingface')))
+os.environ['HF_HOME'] = os.environ.get('LOCALLAB_HF_HOME', str(AI / 'huggingface'))
+os.environ['HF_HUB_CACHE'] = os.environ.get('LOCALLAB_HF_HUB_CACHE', str(Path(os.environ['HF_HOME']) / 'hub'))
 os.environ.setdefault('HF_HUB_DISABLE_XET', '1')
 from huggingface_hub import hf_hub_download, snapshot_download
 
@@ -71,6 +73,9 @@ def main():
             # Turbo changes the DiT and schedule. Reuse the installed base
             # Qwen3-VL encoder, retaining its full vision tower for editing.
             view(snapshot, ROOT / name, ROOT / 'qwen-image-2.1' / 'text_encoder')
+        elif name == 'qwen-image-2.1-heretic-encoder':
+            prepare_encoder(snapshot, ROOT / name)
+            source['config_compatibility'] = 'Legacy RoPE field aliases for mflux 0.23 reference editing'
         else:
             link(snapshot, ROOT / name)
     encoder = ROOT / 'qwen-image-2.1-heretic-encoder'

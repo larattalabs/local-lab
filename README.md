@@ -145,6 +145,8 @@ pinned revisions into `~/AI/huggingface`, and composes checkpoint views under
 `~/AI/image-stack` by symlink. Qwen Turbo shares the base Qwen3-VL encoder;
 Heretic variants share all remaining components. SeedVR2 reuses the existing
 `~/ComfyUI-Shared/models/SEEDVR2` files without copying them.
+Heretic's encoder view adds the legacy RoPE config field names needed by
+mflux's reference editor; its cached config and weight files stay intact.
 
 Noct Q V4 defaults to 25 steps, guidance 3 and a short negative quality prompt;
 set guidance to 1 to trade conditioning for speed. Its publicly available INT8
@@ -154,7 +156,7 @@ INT8 approximation; it is not the author's original BF16 checkpoint. Source
 revisions and conversion details are recorded beside the model views.
 
 Override paths with `LOCALLAB_IMAGE_MODELS_DIR`, `LOCALLAB_SEEDVR2_DIR`,
-`LOCALLAB_AI_ROOT` or `LOCALLAB_HF_HOME`. Normal runs remain offline. Model files
+`LOCALLAB_AI_ROOT`, `LOCALLAB_HF_HOME` or `LOCALLAB_HF_HUB_CACHE`. Normal runs remain offline. Model files
 and generated images are never stored in Git.
 
 Checks: `node scripts/test-image-stack.mjs` verifies adapter contracts without
