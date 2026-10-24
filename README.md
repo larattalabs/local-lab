@@ -179,6 +179,36 @@ Measured on an M5 Max / 128 GB at 1024², including loading: Qwen Turbo generati
 46 s / editing 97 s. SeedVR2's 256→512 test took 15 s. These are single-run smoke
 timings, not a broad quality ranking.
 
+## Animate a generated image
+
+Click **animate** beneath a finished image in a conversation or Earlier runs.
+The dialog previews the starting frame and lets you enter a motion prompt,
+choose an installed image-to-video model, and adjust its settings. Resolution
+starts near the source image's aspect ratio unless you already chose a video
+resolution. Cancel leaves the current chat and settings intact.
+
+**Generate video** queues the job and opens a fresh Video chat with that image
+and those settings. Other image drafts and conversations stay intact. The
+source frame is saved with the video chat and carries into later prompts while
+context is on. Jobs still run one at a time.
+
+The stock LTX text encoder has an explicit local view so generation does not
+fall back to a hidden download. Prepare it with the shared mflux Python:
+`~/.local/share/uv/tools/mflux/bin/python scripts/setup-video-encoder.py`.
+Override its directory with `LOCALLAB_LTX_ENCODER_DIR`. The video adapter checks
+for its config before appearing available. Video inference keeps its separate
+`~/AI/venvs/ltx-av` environment.
+
+The installed LTX-2.3 unified MLX path uses fixed 8 + 3 sampling steps and baked
+in guidance; the app does not expose Steps, CFG or negative-prompt controls that
+this runtime ignores. Video-only output is the default, skipping audio decode
+and muxing while retaining joint audio/video denoising. Enable audio by
+unchecking **Video only**. Small draft sizes are available for quick tests;
+frame counts follow the model's 8n+1 constraint.
+
+Run `node scripts/test-video-workflow.mjs` for model-free handoff, context,
+draft-isolation, rejection and backend-contract checks.
+
 ## DeepSeek V4.1 Flash 1017
 
 In Text, select **DeepSeek V4.1 Flash 1017 · Q2**. This entry uses

@@ -1,4 +1,4 @@
-import type { AdapterInfo, AvailabilityReport, Chat, ChatMessage, Job, Modality, RunRecord } from '@shared/types'
+import type { AdapterInfo, AvailabilityReport, Chat, ChatMessage, Job, Modality, RunRecord, RunRequest } from '@shared/types'
 import { lab } from '../api'
 
 /**
@@ -18,8 +18,8 @@ class LabStore {
   prompts = $state<Record<Modality, string>>({ image: '', video: '', music: '', text: '' })
   /** adapterId -> param overrides */
   params = $state<Record<string, Record<string, unknown>>>({})
-  /** attached reference/init images, shared across the image + video sections */
-  images = $state<string[]>([])
+  /** Reference inputs stay with their tab, so another draft cannot leak into a handoff. */
+  images = $state<Record<Modality, string[]>>({ image: [], video: [], music: [], text: [] })
 
   /** every conversation, all modalities; sidebar filters per tab */
   chats = $state<Chat[]>([])
@@ -135,7 +135,8 @@ class LabStore {
       const allAccept = adapterIds.every(
         (id) => this.adapters.find((a) => a.id === id)?.acceptsImages
       )
-      if (lastImage?.outputPath && allAccept) return { carryImage: lastImage.outputPath }
+      const source = lastImage?.outputPath ?? chat.sourceImage
+      if (source && allAccept) return { carryImage: source }
     }
     // Music: no conditioning mechanism yet — an honest no-op, not fake memory.
     return {}
@@ -172,7 +173,7 @@ class LabStore {
 
     const useContext = chat.contextOn && chat.messages.length > 0
     const ctx = useContext ? this.contextFor(chat, m, ids) : {}
-    const images = this.images.length ? [...this.images] : ctx.carryImage ? [ctx.carryImage] : []
+    const images = this.images[m].length ? [...this.images[m]] : ctx.carryImage ? [ctx.carryImage] : []
 
     const params: Record<string, Record<string, unknown>> = {}
     for (const id of ids) {
@@ -212,7 +213,48 @@ class LabStore {
     }
     this.persist(chat)
     this.prompts[m] = ''
-    this.images = []
+    this.images[m] = []
+  }
+
+  /** Queue a still as a fresh video conversation without consuming another tab's draft. */
+  async generateVideoFromImage(image: string, typedPrompt: string, adapterId: string,
+    params: Record<string, unknown>): Promise<Chat> {
+    const adapter = this.adapters.find((a) => a.id === adapterId)
+    if (!adapter || adapter.modality !== 'video' || !adapter.acceptsImages || !this.isAvailable(adapterId)) {
+      throw new Error('Choose an installed image-to-video model.')
+    }
+    const prompt = typedPrompt.trim()
+    if (!image || !prompt) throw new Error('Choose a starting image and describe its motion.')
+    const request: RunRequest = {
+      adapterIds: [adapterId], modality: 'video', prompt,
+      params: { [adapterId]: { ...this.resolvedParams(adapter), ...params } }, images: [image],
+    }
+    // Wait for acceptance before touching the active chat or model selection.
+    const jobs = await lab.run($state.snapshot(request))
+    if (!jobs.length) throw new Error('The video could not be queued. Please try again.')
+    const now = Date.now()
+    const fresh: Chat = {
+      id: crypto.randomUUID(), modality: 'video', sourceImage: image,
+      title: prompt.length > 48 ? prompt.slice(0, 48) + '…' : prompt,
+      createdAt: now, updatedAt: now, contextOn: true,
+      messages: [{ id: crypto.randomUUID(), role: 'user', at: now, text: prompt,
+        contextOn: false, images: [image] }, ...jobs.map((job): ChatMessage => ({
+          id: crypto.randomUUID(), role: 'gen', at: now, jobId: job.id,
+          adapterId: job.adapterId, adapterLabel: job.adapterLabel, state: job.state,
+        }))],
+    }
+    this.chats = [fresh, ...this.chats]
+    this.activeChat.video = fresh.id
+    this.viewingUnfiled.video = false
+    this.selected.video = [adapterId]
+    this.prompts.video = ''
+    this.images.video = []
+    this.params[adapterId] = { ...request.params[adapterId] }
+    const chat = this.currentChat('video')!
+    // A fast failure or progress event may have arrived during the IPC call.
+    for (const job of jobs) this.absorbJob(this.jobs.find((j) => j.id === job.id) ?? job)
+    this.persist(chat)
+    return chat
   }
 
   forModality(m: Modality): AdapterInfo[] {
