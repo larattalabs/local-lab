@@ -25,7 +25,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
       - run: pnpm build
-      - name: Compile Python workers
-        run: python3 -m py_compile resources/workers/*.py
+      - name: Test image adapter contracts
+        run: node scripts/test-image-stack.mjs
+      - name: Compile Python sources
+        run: python3 -m py_compile resources/workers/*.py scripts/*.py
+      - name: Test Qwen encoder config compatibility
+        run: python3 scripts/test-qwen-encoder.py
       - name: Test DwarfStar worker protocol and lifecycle
         run: python3 scripts/test-ds4-worker.py

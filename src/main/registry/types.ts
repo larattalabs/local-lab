@@ -49,6 +49,7 @@ export function toInfo(a: Adapter): AdapterInfo {
     params: a.params,
     acceptsImages: a.acceptsImages,
     requiresImage: a.requiresImage,
+    promptOptional: a.promptOptional,
     acceptsAudio: a.acceptsAudio,
     requiresAudio: a.requiresAudio,
     streams: a.streams,
