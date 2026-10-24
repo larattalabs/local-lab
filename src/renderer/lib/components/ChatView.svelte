@@ -15,7 +15,11 @@
   const selectedCount = $derived(
     store.selected[modality].filter((id) => store.isAvailable(id)).length
   )
-  const runnable = $derived(selectedCount > 0 && store.prompts[modality].trim().length > 0)
+  const promptOptional = $derived(selectedCount > 0 && store.selected[modality]
+    .filter((id) => store.isAvailable(id))
+    .every((id) => store.adapters.find((a) => a.id === id)?.promptOptional))
+  const runnable = $derived(selectedCount > 0 &&
+    (store.prompts[modality].trim().length > 0 || promptOptional))
   const wantsImages = $derived(
     store.selected[modality].some(
       (id) => store.adapters.find((a) => a.id === id)?.acceptsImages
@@ -270,7 +274,7 @@
           class="w-full resize-none rounded bg-bench-850 border border-bench-700 p-2.5 text-[13px]
                  leading-relaxed outline-none focus:border-bench-600 placeholder:text-bench-600"
           rows="2"
-          placeholder={modality === 'text'
+          placeholder={promptOptional ? 'Optional note for this upscale…' : modality === 'text'
             ? 'Ask something… (Enter to send, Shift+Enter for a new line)'
             : `Describe what you want ${modality === 'music' ? 'to hear' : 'to see'}…`}
           bind:value={store.prompts[modality]}

@@ -50,6 +50,8 @@ export interface AdapterInfo {
    *  without one fails immediately with a clear message instead of a
    *  argparse traceback. */
   requiresImage?: boolean
+  /** Upscalers consume an image without needing a text instruction. */
+  promptOptional?: boolean
   /** Accepts an input audio file (ACE-Step cover/remix). */
   acceptsAudio?: boolean
   /** The task cannot run without a source audio file. */

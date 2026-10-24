@@ -143,8 +143,12 @@ class LabStore {
 
   async send(m: Modality) {
     const ids = this.selected[m].filter((id) => this.isAvailable(id))
-    const prompt = this.prompts[m].trim()
-    if (!ids.length || !prompt) return
+    const typedPrompt = this.prompts[m].trim()
+    const promptOptional = ids.length > 0 && ids.every(
+      (id) => this.adapters.find((a) => a.id === id)?.promptOptional
+    )
+    if (!ids.length || (!typedPrompt && !promptOptional)) return
+    const prompt = typedPrompt || 'Upscale image'
 
     let chat = this.currentChat(m)
     if (!chat) {
