@@ -27,6 +27,8 @@ jobs:
       - run: pnpm build
       - name: Test image adapter contracts
         run: node scripts/test-image-stack.mjs
+      - name: Test image-to-video workflow
+        run: node scripts/test-video-workflow.mjs
       - name: Compile Python sources
         run: python3 -m py_compile resources/workers/*.py scripts/*.py
       - name: Test Qwen encoder config compatibility

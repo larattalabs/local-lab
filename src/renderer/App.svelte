@@ -30,7 +30,7 @@
   </header>
 
   {#if ready}
-    <ChatView modality={active} />
+    <ChatView modality={active} onNavigate={(modality) => (active = modality)} />
   {:else}
     <div class="flex-1 grid place-items-center text-bench-400 mono text-[12px]">
       scanning for local models…

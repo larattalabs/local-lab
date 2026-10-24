@@ -4,8 +4,10 @@
   import { fileUrl } from '../api'
   import ModelDropdown from './ModelDropdown.svelte'
   import ParamPanel from './ParamPanel.svelte'
+  import AnimateImage from './AnimateImage.svelte'
 
-  let { modality }: { modality: Modality } = $props()
+  let { modality, onNavigate }: { modality: Modality; onNavigate: (m: Modality) => void } = $props()
+  let animationSource = $state<string | null>(null)
 
   const chats = $derived(store.chatsFor(modality))
   const chat = $derived(store.currentChat(modality))
@@ -168,6 +170,10 @@
               {/if}
               <footer class="flex items-center gap-2 px-2.5 py-1.5 border-t border-bench-700 mono text-[10px]">
                 <div class="flex-1"></div>
+                {#if modality === 'image' && r.state === 'done' && r.outputPath}
+                  <button class="text-signal hover:text-bench-100" title="Turn this image into a video"
+                          onclick={() => (animationSource = r.outputPath!)}>animate</button>
+                {/if}
                 {#if r.outputPath}
                   <button class="text-bench-500 hover:text-bench-100"
                           onclick={() => window.lab.reveal(r.outputPath!)}>reveal</button>
@@ -199,6 +205,9 @@
             {#if m.role === 'user'}
               <div class="flex justify-end">
                 <div class="max-w-[70%] rounded-xl rounded-br-sm bg-bench-700 px-3.5 py-2">
+                  {#if modality === 'video' && chat.sourceImage && m.images?.includes(chat.sourceImage)}
+                    <img src={fileUrl(chat.sourceImage)} alt="Video starting frame" class="mb-2 max-h-40 rounded" />
+                  {/if}
                   <p class="text-[13px] leading-relaxed whitespace-pre-wrap">{m.text}</p>
                   <div class="flex items-center gap-2 mt-1 mono text-[9.5px] text-bench-400 justify-end">
                     {#if m.contextOn === false}<span title="Sent without conversation context">fresh</span>{/if}
@@ -247,6 +256,10 @@
                     {#if j?.log}
                       <button class="text-bench-500 hover:text-bench-100"
                               onclick={() => (openLog = openLog === m.id ? null : m.id)}>log</button>
+                    {/if}
+                    {#if modality === 'image' && outputPath && state === 'done'}
+                      <button class="text-signal hover:text-bench-100" title="Turn this image into a video"
+                              onclick={() => (animationSource = outputPath)}>animate</button>
                     {/if}
                     {#if outputPath && state === 'done'}
                       <button class="text-bench-500 hover:text-bench-100"
@@ -303,21 +316,21 @@
               class="mono text-[11px] px-2 py-1 rounded border border-bench-700 text-bench-300
                      hover:border-bench-600 hover:text-bench-100"
               onclick={async () =>
-                (store.images = wantsAudio
+                (store.images[modality] = wantsAudio
                   ? await window.lab.pickAudio()
                   : await window.lab.pickImages())}
             >
-              {store.images.length
+              {store.images[modality].length
                 ? wantsAudio
-                  ? store.images[0].split('/').pop()
-                  : `${store.images.length} image(s)`
+                  ? store.images[modality][0].split('/').pop()
+                  : `${store.images[modality].length} image(s)`
                 : wantsAudio
                   ? 'attach audio'
                   : 'attach'}
             </button>
-            {#if store.images.length}
+            {#if store.images[modality].length}
               <button class="mono text-[11px] text-bench-400 hover:text-fault"
-                      onclick={() => (store.images = [])}>clear</button>
+                      onclick={() => (store.images[modality] = [])}>clear</button>
             {/if}
           {/if}
 
@@ -382,3 +395,7 @@
     <span class="mono text-[11px] text-bench-600">{path}</span>
   {/if}
 {/snippet}
+
+{#if animationSource}
+  <AnimateImage image={animationSource} onDismiss={() => (animationSource = null)} {onNavigate} />
+{/if}

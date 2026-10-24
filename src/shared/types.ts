@@ -168,6 +168,8 @@ export interface ChatMessage {
  * never deletes generations.
  */
 export interface Chat {
+  /** Original still carried into an image-to-video conversation. */
+  sourceImage?: string
   id: string
   modality: Modality
   title: string
