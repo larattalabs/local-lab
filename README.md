@@ -177,6 +177,15 @@ full precision (one run per case; these are smoke-test timings):
 
 SeedVR2's 256→512 test took 15 s. Larger inputs increase both time and memory.
 
+For Local Qwen generation, the advanced **Step reuse** selector can reuse 25% or
+50% of predictions; it is off by default and can alter details. A separate
+1024² neutral-portrait test measured 182 s at 25 steps / guidance 3, 99 s with
+50% step reuse at the same settings, and 79 s at 20 steps / guidance 1. Combining
+20 steps / guidance 1 with 50% reuse took 44 s through the native UI.
+Guidance 1 disables the negative-prompt pass and changes conditioning. These
+are single-prompt comparisons. Reference editing uses a different caching
+implementation and does not expose this generation-only flag.
+
 ## DeepSeek V4.1 Flash 1017
 
 In Text, select **DeepSeek V4.1 Flash 1017 · Q2 · customized**. This entry uses

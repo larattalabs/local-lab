@@ -43,6 +43,7 @@ interface ImageModel {
   notes?: string
   guided?: boolean
   expandedInt8?: boolean
+  stepReuse?: boolean
 }
 
 function imageModel(spec: ImageModel): Adapter {
@@ -70,6 +71,11 @@ function imageModel(spec: ImageModel): Adapter {
         { key: 'negative', label: 'Negative prompt', type: 'string',
           default: spec.guided ? 'blurry, low quality, artifacts' : '', advanced: true } satisfies ParamSpec,
       ] : []),
+      ...(spec.stepReuse ? [{ key: 'step_cache_ratio', label: 'Step reuse', type: 'select',
+        default: '', advanced: true, options: [{ value: '', label: 'Off' },
+          { value: '0.25', label: '25% of steps' }, { value: '0.5', label: '50% of steps' }],
+        help: 'Reuse previous predictions to speed generation. May reduce detail or change composition.',
+      } satisfies ParamSpec] : []),
     ],
     build({ prompt, params, images, outPath }) {
       if (spec.edit && (!images.length || images.length > 10)) {
@@ -90,6 +96,11 @@ function imageModel(spec: ImageModel): Adapter {
       if (spec.qwen && !spec.turbo) {
         if (params.guidance != null) args.push('--guidance', String(params.guidance))
         if (params.negative) args.push('--negative-prompt', String(params.negative))
+      }
+      if (spec.stepReuse && params.step_cache_ratio) {
+        const ratio = String(params.step_cache_ratio)
+        if (!['0.25', '0.5'].includes(ratio)) throw new Error('Choose a supported step reuse amount.')
+        args.push('--step-cache-ratio', ratio)
       }
       return { bin, args }
     },
@@ -129,7 +140,7 @@ export const imageStackAdapters: Adapter[] = [
   imageModel({ id: 'qwen-image-2.1-edit', label: 'Qwen Image 2.1 — edit', model: 'qwen-image-2.1',
     base: 'qwen-image-2.1', command: 'mflux-generate-qwen-2.1-edit', steps: 40, qwen: true, edit: true }),
   imageModel({ id: 'qwen-local-v4', label: 'Local Qwen profile', model: 'qwen-local-v4',
-    base: 'qwen-image-2.1', command: 'mflux-generate-qwen-2.1', steps: 25, qwen: true, guided: true, expandedInt8: true,
+    base: 'qwen-image-2.1', command: 'mflux-generate-qwen-2.1', steps: 25, qwen: true, guided: true, expandedInt8: true, stepReuse: true,
     notes: 'Local profile’s Qwen 2.1 realism finetune. Published INT8 weights expanded to BF16. 25 steps.' }),
   imageModel({ id: 'qwen-local-v4-edit', label: 'Local Qwen profile — edit', model: 'qwen-local-v4',
     base: 'qwen-image-2.1', command: 'mflux-generate-qwen-2.1-edit', steps: 25, qwen: true, edit: true, guided: true, expandedInt8: true,
