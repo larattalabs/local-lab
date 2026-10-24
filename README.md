@@ -251,7 +251,7 @@ identities, licenses and conversion recipes kept in private files outside Git:
 {
   "models": [{
     "id": "ltx-local", "label": "LTX local profile", "engine": "ltx-mlx",
-    "model": "ltx-local", "encoder": "ltx-text-encoder"
+    "model": "ltx-local", "ltxVersion": "2.3", "encoder": "ltx-text-encoder"
   }, {
     "id": "h3-local", "label": "H3 local profile", "engine": "h3-native",
     "model": "h3-local", "binary": "h3-local-engine/h3",
@@ -266,6 +266,10 @@ labels and filesystem aliases because command paths appear in local run logs.
 Private source records remain truthful about the underlying weights and licenses.
 Restart Local Lab after changing profiles. Overrides: `LOCALLAB_VIDEO_PROFILES`,
 `LOCALLAB_VIDEO_MODELS_DIR`, `LOCALLAB_H3_BIN`, `LOCALLAB_LTX_NEXT_BIN`.
+LTX profiles default to version 2.3 and require an explicit local Gemma 3 encoder.
+For a 2.5 pack, set `ltxVersion` to `2.5` and use its bundled encoder. Availability
+also checks the matching codecs and spatial upscaler; the runtime must not fall
+back to an uninitialized upscaler when a shared component is missing.
 
 ## DeepSeek V4.1 Flash 1017
 

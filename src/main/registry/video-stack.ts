@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
+import { randomInt } from 'node:crypto'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join } from 'node:path'
 import { AI_ROOT } from '../env'
@@ -21,6 +22,7 @@ interface VideoProfile {
   steps?: number
   allowApproximation?: boolean
   diffusionDecoder?: boolean
+  ltxVersion?: '2.3' | '2.5'
 }
 
 const local: { models?: VideoProfile[] } = existsSync(configPath)
@@ -48,6 +50,18 @@ function videoModel(spec: VideoProfile): Adapter {
   const model = pathFor(spec.model)
   const bin = spec.binary ? pathFor(spec.binary) : h3 ? H3_BIN : LTX_BIN
   const encoder = spec.encoder ? pathFor(spec.encoder) : undefined
+  const ltx25 = spec.ltxVersion === '2.5'
+  if ((!h3 && !ltx25 && !encoder) || (spec.ltxVersion && !['2.3', '2.5'].includes(spec.ltxVersion))
+    || (spec.diffusionDecoder && (h3 || !ltx25)) || (ltx25 && encoder)) {
+    throw new Error(`Invalid video encoder or version in ${configPath}`)
+  }
+  const ltxFiles = ['transformer-distilled.safetensors', 'connector.safetensors',
+    'audio_vae.safetensors', 'vocoder.safetensors',
+    ...(ltx25 ? ['vae_encoder_conv.safetensors', 'vae_decoder_conv.safetensors',
+      'spatial_upscaler_x2_v1_0.safetensors', 'text_encoder.safetensors', 'text_encoder_config.json', 'tokenizer.json']
+      : ['vae_encoder.safetensors', 'vae_decoder.safetensors', 'spatial_upscaler_x2_v1_1.safetensors']),
+    ...(spec.diffusionDecoder ? ['vae_decoder_av.safetensors'] : []),
+  ]
   const approximate = h3 && spec.allowApproximation !== false
   const frames = h3 ? [22, 56, 124, 243] : [49, 97, 121, 161, 241]
   return {
@@ -58,7 +72,7 @@ function videoModel(spec: VideoProfile): Adapter {
       : 'Native MLX, distilled two-stage generation. Video only is the faster default.'),
     requires: [bin, join(model, 'local-lab-ready.json'),
       ...(h3 ? [join(dirname(bin), 'h3_shaders.metal'), join(model, 'FL2VA', 'transformer', 'config.json')]
-        : [join(model, 'transformer-distilled.safetensors'), ...(encoder ? [join(encoder, 'config.json')] : [])])],
+        : [...ltxFiles.map((file) => join(model, file)), ...(encoder ? [join(encoder, 'config.json')] : [])])],
     params: [resolution,
       { key: 'frames', label: 'Frames', type: 'select', default: h3 ? '56' : '97',
         options: frames.map((n) => ({ value: String(n), label: `${n} (~${(n / 24).toFixed(1)}s)` })),
@@ -93,7 +107,8 @@ function videoModel(spec: VideoProfile): Adapter {
       if ((count - (h3 ? 5 : 1)) % (h3 ? 17 : 8) !== 0) {
         throw new Error(h3 ? 'H3 requires 17n+5 frames.' : 'LTX requires 8n+1 frames.')
       }
-      const chosenSeed = integer(params.seed === '' ? undefined : params.seed, 42, 0, 2147483647, 'Seed')
+      const chosenSeed = params.seed === null || params.seed === '' ? randomInt(0, 4294967296)
+        : integer(params.seed, 42, 0, 4294967295, 'Seed')
       if (h3) {
         const steps = integer(params.steps, spec.steps ?? 20, 1, 50, 'Steps')
         const layers = approximate ? integer(params.layers, 45, 40, 50, 'Layers') : 50
@@ -125,7 +140,7 @@ function videoModel(spec: VideoProfile): Adapter {
 
 export const videoStackAdapters: Adapter[] = [
   videoModel({ id: 'minimax-h3', label: 'MiniMax H3', engine: 'h3-native', model: 'h3-stock' }),
-  videoModel({ id: 'ltx-2.5', label: 'LTX-2.5', engine: 'ltx-mlx', model: 'ltx-2.5', diffusionDecoder: true }),
+  videoModel({ id: 'ltx-2.5', label: 'LTX-2.5', engine: 'ltx-mlx', model: 'ltx-2.5', ltxVersion: '2.5', diffusionDecoder: true }),
   ...(local.models ?? []).map(videoModel),
 ]
 if (new Set(videoStackAdapters.map((a) => a.id)).size !== videoStackAdapters.length) {

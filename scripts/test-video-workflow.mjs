@@ -128,11 +128,17 @@ try {
   assert.equal(nextSpec.args[nextSpec.args.indexOf('--stage2-steps') + 1], '3')
   assert.deepEqual(nextSpec.args.slice(-4), ['--image', input.images[0], '0', '1.0'])
   assert(!nextSpec.args.includes('--gemma'))
+  for (const file of ['connector.safetensors', 'vae_decoder_conv.safetensors',
+    'vae_encoder_conv.safetensors', 'spatial_upscaler_x2_v1_0.safetensors', 'text_encoder.safetensors']) {
+    assert(next.requires.some((path) => path.endsWith('/' + file)), 'Missing availability check: ' + file)
+  }
   assert.equal(nextSpec.args[nextSpec.args.indexOf('--video-decoder') + 1], 'conv')
   const diffusion = next.build({ ...input, params: { decoder: 'diffusion' } })
   assert.equal(diffusion.args[diffusion.args.indexOf('--video-decoder') + 1], 'diffusion')
   assert(!next.build({ ...input, params: { no_audio: false } }).args.includes('--no-audio'))
   const localLtx = videoAdapters.find((adapter) => adapter.id === 'ltx-local').build(input)
+  assert(videoAdapters.find((adapter) => adapter.id === 'ltx-local').requires
+    .some((path) => path.endsWith('/spatial_upscaler_x2_v1_1.safetensors')))
   assert.equal(localLtx.args[localLtx.args.indexOf('--gemma') + 1], '/models/stock encoder')
   assert.equal(localLtx.args[localLtx.args.indexOf('--model') + 1], '/models/ltx local')
   for (const adapter of [h3, next]) {
@@ -140,6 +146,15 @@ try {
       assert.throws(() => adapter.build({ ...input, params }))
     }
     assert.throws(() => adapter.build({ ...input, images: ['a.png', 'b.png'] }), /one starting image/)
+    assert.throws(() => adapter.build({ ...input, params: { seed: 4294967296 } }))
+    const fixed = adapter.build({ ...input, params: { seed: 4294967295 } })
+    assert.equal(fixed.args[fixed.args.indexOf('--seed') + 1], '4294967295')
+    const randomSeeds = Array.from({ length: 4 }, () => {
+      const generated = adapter.build({ ...input, params: { seed: null } })
+      return Number(generated.args[generated.args.indexOf('--seed') + 1])
+    })
+    assert(randomSeeds.every((seed) => Number.isInteger(seed) && seed >= 0 && seed <= 4294967295))
+    assert(new Set(randomSeeds).size > 1, 'An empty seed should choose fresh random seeds')
   }
   assert.throws(() => h3.build({ ...input, params: { steps: NaN } }))
   assert.throws(() => h3.build({ ...input, params: { layers: 41 } }))
