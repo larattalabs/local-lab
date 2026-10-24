@@ -11,7 +11,7 @@ and remembering which flag each CLI wants.
 
 ## Why a desktop app
 
-These models are 14–41 GB apiece and live in separate Python virtualenvs. The app
+Models occupy tens to over a hundred GB and use separate native runtimes. The app
 is a thin, well-behaved supervisor around them: it spawns each model's own
 interpreter with the right environment, streams the output back, and shows you
 the artifact. Nothing is reimplemented, and no model weights are bundled.
@@ -25,6 +25,8 @@ macOS on Apple Silicon, with as many of these as you care about:
 | Image | [mflux](https://github.com/filipstrand/mflux) CLIs | `~/.local/bin/mflux-generate*` |
 | Image | Krea 2 (MLX) | `~/AI/krea2-mlx` |
 | Video | `mlx_video` (LTX-2.3) | `~/AI/venvs/ltx-av` |
+| Video | [h3.c](https://github.com/antirez/h3.c) (MiniMax H3) | `~/Developer/labs/h3.c` |
+| Video | [ltx-2-mlx](https://github.com/dgrauet/ltx-2-mlx) (LTX-2.5) | `~/AI/venvs/ltx-next` |
 | Music | ACE-Step v1.5 (text-to-music + remix/cover) | `~/AI/ace-step` |
 | Text | [Ollama](https://ollama.com) | `ollama` on PATH |
 | Text | [DwarfStar / ds4](https://github.com/antirez/ds4) (V4.1 Flash 1017 Q2) | `~/Developer/_infra/ds4-v41` + `~/AI/ds4-gguf/v41-1017` |
@@ -208,6 +210,66 @@ frame counts follow the model's 8n+1 constraint.
 
 Run `node scripts/test-video-workflow.mjs` for model-free handoff, context,
 draft-isolation, rejection and backend-contract checks.
+
+### Native H3 and LTX-2.5
+
+These use separate engines from the existing LTX-2.3 entry. Install their pinned
+runtimes with native arm64 tools:
+
+```sh
+git clone https://github.com/antirez/h3.c.git ~/Developer/labs/h3.c
+git -C ~/Developer/labs/h3.c checkout 8974cc055ea9c02fcd14cc27dfda3e1027c05153
+make -C ~/Developer/labs/h3.c -j8
+
+git clone https://github.com/dgrauet/ltx-2-mlx.git ~/Developer/labs/ltx-to-mlx
+git -C ~/Developer/labs/ltx-to-mlx checkout b82b97e3d000e01361f8cfcb745244b15b89a521
+cd ~/Developer/labs/ltx-to-mlx
+UV_PROJECT_ENVIRONMENT=~/AI/venvs/ltx-next uv sync --python 3.12 --no-dev
+```
+
+Then run `scripts/setup-video-stack.py` from the Local Lab checkout with the
+shared mflux Python. Accept the LTX-2.5 MLX pack's Hugging Face license first.
+The script downloads about 144 GB for H3's first/last-frame components and 45 GB
+for the distilled LTX-2.5 pack, verifies published SHA-256 hashes, and composes
+views under `~/AI/video-stack`. Use `--only h3` or `--only ltx-2.5` to select one;
+`--offline` rechecks cached files using the saved source manifest. Models become
+available only after verification writes their readiness marker.
+
+H3 produces sound at 24 FPS and uses a different frame grid (17n+5). Its
+balanced default uses 20 steps, 45 of 50 layers and prediction reuse of 2;
+choose all 50 layers and disable reuse for a closer reference. LTX-2.5 uses
+8n+1 frames, its bundled Gemma 4 encoder, and an 8 + 3 step distilled schedule.
+The first-stage step control can reduce that to 6 or 4 evaluations for drafts.
+Audio is optional. Its older Gemma 3 encoder is not interchangeable.
+LTX-2.5 also offers its experimental diffusion decoder in advanced settings;
+the convolutional decoder remains the faster default.
+
+Personal video profiles belong in `~/AI/video-stack/profiles.json`, with model
+identities, licenses and conversion recipes kept in private files outside Git:
+
+```json
+{
+  "models": [{
+    "id": "ltx-local", "label": "LTX local profile", "engine": "ltx-mlx",
+    "model": "ltx-local", "ltxVersion": "2.3", "encoder": "ltx-text-encoder"
+  }, {
+    "id": "h3-local", "label": "H3 local profile", "engine": "h3-native",
+    "model": "h3-local", "binary": "h3-local-engine/h3",
+    "steps": 8, "allowApproximation": false
+  }]
+}
+```
+
+Profiles use the same Animate dialog and serial job queue. A profile's converted
+pack needs its own `local-lab-ready.json` after validation. Use neutral IDs,
+labels and filesystem aliases because command paths appear in local run logs.
+Private source records remain truthful about the underlying weights and licenses.
+Restart Local Lab after changing profiles. Overrides: `LOCALLAB_VIDEO_PROFILES`,
+`LOCALLAB_VIDEO_MODELS_DIR`, `LOCALLAB_H3_BIN`, `LOCALLAB_LTX_NEXT_BIN`.
+LTX profiles default to version 2.3 and require an explicit local Gemma 3 encoder.
+For a 2.5 pack, set `ltxVersion` to `2.5` and use its bundled encoder. Availability
+also checks the matching codecs and spatial upscaler; the runtime must not fall
+back to an uninitialized upscaler when a shared component is missing.
 
 ## DeepSeek V4.1 Flash 1017
 

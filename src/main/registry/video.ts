@@ -2,6 +2,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { AI_ROOT } from '../env'
 import type { Adapter, RunContext } from './types'
+import { videoStackAdapters } from './video-stack'
 
 const home = homedir()
 const LTX_VENV = process.env.LOCALLAB_LTX_VENV ?? join(home, 'AI', 'venvs', 'ltx-av')
@@ -101,4 +102,7 @@ const ltx: Adapter = {
   },
 }
 
-export const videoAdapters: Adapter[] = [ltx]
+export const videoAdapters: Adapter[] = [ltx, ...videoStackAdapters]
+if (new Set(videoAdapters.map((adapter) => adapter.id)).size !== videoAdapters.length) {
+  throw new Error('Video adapter IDs must be unique, including local profiles.')
+}

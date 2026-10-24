@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -78,6 +78,13 @@ try {
   assert.deepEqual(store.images.image, ['/image-draft.png'])
 
   process.env.LOCALLAB_LTX_ENCODER_DIR = join(temp, 'encoder with spaces')
+  process.env.LOCALLAB_VIDEO_PROFILES = join(temp, 'video-profiles.json')
+  writeFileSync(process.env.LOCALLAB_VIDEO_PROFILES, JSON.stringify({ models: [
+    { id: 'h3-local', label: 'H3 local profile', engine: 'h3-native', model: '/models/h3 local',
+      binary: '/engines/curve engine/h3', steps: 8, allowApproximation: false },
+    { id: 'ltx-local', label: 'LTX local profile', engine: 'ltx-mlx', model: '/models/ltx local',
+      encoder: '/models/stock encoder' },
+  ] }))
   const registry = join(temp, 'video.mjs')
   await build({ entryPoints: ['src/main/registry/video.ts'], outfile: registry,
     bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' })
@@ -96,5 +103,64 @@ try {
     assert.throws(() => a.build({ ...input, params }))
   }
   assert.throws(() => a.build({ ...input, images: ['a.png', 'b.png'] }), /one starting image/)
-  console.log('Video workflow passed: fresh chat, exact source/settings, draft isolation, IPC rejection, follow-up context and backend constraints.')
+  const h3 = videoAdapters.find((adapter) => adapter.id === 'minimax-h3')
+  const h3spec = h3.build(input)
+  assert.equal(h3spec.args[h3spec.args.indexOf('--first-frame') + 1], input.images[0])
+  assert.equal(h3spec.args[h3spec.args.indexOf('--frames') + 1], '56')
+  assert.equal(h3spec.args[h3spec.args.indexOf('--layers') + 1], '45')
+  assert.equal(h3spec.args[h3spec.args.indexOf('--reuse') + 1], '2')
+  assert(h3.requires.some((path) => path.endsWith('h3_shaders.metal')))
+  assert(!h3.build({ ...input, images: [] }).args.includes('--first-frame'))
+  const personalH3 = videoAdapters.find((adapter) => adapter.id === 'h3-local')
+  const personalSpec = personalH3.build({ ...input, params: { reuse: 3, layers: 40 } })
+  assert.equal(personalSpec.bin, '/engines/curve engine/h3')
+  assert.equal(personalSpec.cwd, '/engines/curve engine')
+  assert.equal(personalSpec.args[personalSpec.args.indexOf('--steps') + 1], '8')
+  assert.equal(personalSpec.args[personalSpec.args.indexOf('--reuse') + 1], '1')
+  assert.equal(personalSpec.args[personalSpec.args.indexOf('--layers') + 1], '50')
+  assert(!personalH3.params.some((p) => ['layers', 'reuse'].includes(p.key)))
+  const next = videoAdapters.find((adapter) => adapter.id === 'ltx-2.5')
+  const nextSpec = next.build(input)
+  assert(nextSpec.args.includes('--distilled'))
+  assert(nextSpec.args.includes('--no-audio'))
+  assert.equal(nextSpec.args[nextSpec.args.indexOf('--frame-rate') + 1], '24')
+  assert.equal(nextSpec.args[nextSpec.args.indexOf('--stage1-steps') + 1], '8')
+  assert.equal(nextSpec.args[nextSpec.args.indexOf('--stage2-steps') + 1], '3')
+  assert.deepEqual(nextSpec.args.slice(-4), ['--image', input.images[0], '0', '1.0'])
+  assert(!nextSpec.args.includes('--gemma'))
+  for (const file of ['connector.safetensors', 'vae_decoder_conv.safetensors',
+    'vae_encoder_conv.safetensors', 'spatial_upscaler_x2_v1_0.safetensors', 'text_encoder.safetensors']) {
+    assert(next.requires.some((path) => path.endsWith('/' + file)), 'Missing availability check: ' + file)
+  }
+  assert.equal(nextSpec.args[nextSpec.args.indexOf('--video-decoder') + 1], 'conv')
+  const diffusion = next.build({ ...input, params: { decoder: 'diffusion' } })
+  assert.equal(diffusion.args[diffusion.args.indexOf('--video-decoder') + 1], 'diffusion')
+  assert(!next.build({ ...input, params: { no_audio: false } }).args.includes('--no-audio'))
+  const localLtx = videoAdapters.find((adapter) => adapter.id === 'ltx-local').build(input)
+  assert(videoAdapters.find((adapter) => adapter.id === 'ltx-local').requires
+    .some((path) => path.endsWith('/spatial_upscaler_x2_v1_1.safetensors')))
+  assert.equal(localLtx.args[localLtx.args.indexOf('--gemma') + 1], '/models/stock encoder')
+  assert.equal(localLtx.args[localLtx.args.indexOf('--model') + 1], '/models/ltx local')
+  for (const adapter of [h3, next]) {
+    for (const params of [{ frames: 50 }, { resolution: '500x500' }, { seed: -1 }, { seed: 1.5 }]) {
+      assert.throws(() => adapter.build({ ...input, params }))
+    }
+    assert.throws(() => adapter.build({ ...input, images: ['a.png', 'b.png'] }), /one starting image/)
+    assert.throws(() => adapter.build({ ...input, params: { seed: 4294967296 } }))
+    const fixed = adapter.build({ ...input, params: { seed: 4294967295 } })
+    assert.equal(fixed.args[fixed.args.indexOf('--seed') + 1], '4294967295')
+    const randomSeeds = Array.from({ length: 4 }, () => {
+      const generated = adapter.build({ ...input, params: { seed: null } })
+      return Number(generated.args[generated.args.indexOf('--seed') + 1])
+    })
+    assert(randomSeeds.every((seed) => Number.isInteger(seed) && seed >= 0 && seed <= 4294967295))
+    assert(new Set(randomSeeds).size > 1, 'An empty seed should choose fresh random seeds')
+  }
+  assert.throws(() => h3.build({ ...input, params: { steps: NaN } }))
+  assert.throws(() => h3.build({ ...input, params: { layers: 41 } }))
+  assert.throws(() => next.build({ ...input, params: { stage1_steps: 5 } }))
+  assert.throws(() => next.build({ ...input, params: { decoder: 'unknown' } }))
+  assert.throws(() => videoAdapters.find((adapter) => adapter.id === 'ltx-local')
+    .build({ ...input, params: { decoder: 'diffusion' } }))
+  console.log('Video workflow passed: chat handoff, draft isolation, backend constraints, native H3/LTX commands and external profiles.')
 } finally { rmSync(temp, { recursive: true, force: true }) }
