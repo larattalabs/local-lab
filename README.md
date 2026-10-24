@@ -32,8 +32,9 @@ macOS on Apple Silicon, with as many of these as you care about:
 Anything missing simply shows as unavailable with the path it looked for — the
 app runs fine with only some of them installed.
 
-**Availability checks the CLI, not the weights.** A model can be listed as
-runnable and still fail on first use because its weights were never downloaded.
+**Availability checks local requirements.** New image adapters check their
+checkpoint directories as well as the CLI. Some older adapters check only the
+CLI and can still fail on first use if their weights were never downloaded.
 Local Lab runs offline by default (see below), so that failure is fast and loud
 rather than a silent multi-gigabyte download mid-run — and the error tells you
 how to fetch it:
@@ -114,6 +115,52 @@ those parameters into a command line:
 ```
 
 The UI builds itself from `params`. There is nothing else to wire.
+
+## Image generation, editing and upscaling
+
+The Image picker includes Qwen Image 2.1 Turbo (8 steps), its reference editor,
+the full Qwen Image 2.1 editor (40 steps), Noctaluna's Noct Q V4 (25 steps,
+generation and editing), FLUX 3 Image Klein (16 steps, generation and editing),
+and SeedVR2 upscaling. Editing takes one to ten attached reference images.
+With context on, the previous finished image can serve as the next reference.
+SeedVR2 takes exactly one image and needs no text prompt; its size setting
+supports 2×, 3×, or a fixed shortest edge.
+
+Qwen Turbo, the full Qwen editor, and Noct Q offer **Stock / Heretic** in the
+Text encoder selector. Heretic changes the encoder; it does not replace the
+image transformer or add visual training. Original checkpoints stay intact.
+The full Qwen generation entry retains its strength-based img2img controls.
+
+Use mflux 0.23.0 on Python 3.12. Pillow is pinned because 13.0.0 fails to import
+on this runtime:
+
+```sh
+uv tool install --force --python 3.12 --with 'pillow==12.1.1' 'mflux==0.23.0'
+~/.local/share/uv/tools/mflux/bin/python scripts/setup-image-stack.py
+```
+
+FLUX 3 requires accepting access on its Hugging Face model page first. The
+setup script uses the existing HF credentials without printing them, downloads
+pinned revisions into `~/AI/huggingface`, and composes checkpoint views under
+`~/AI/image-stack` by symlink. Qwen Turbo shares the base Qwen3-VL encoder;
+Heretic variants share all remaining components. SeedVR2 reuses the existing
+`~/ComfyUI-Shared/models/SEEDVR2` files without copying them.
+
+Noct Q V4 defaults to 25 steps, guidance 3 and a short negative quality prompt;
+set guidance to 1 to trade conditioning for speed. Its publicly available INT8
+ConvRot checkpoint is expanded once to BF16, including inverse rotation and
+unpacking the fused SwiGLU matrices. This retains the source's
+INT8 approximation; it is not the author's original BF16 checkpoint. Source
+revisions and conversion details are recorded beside the model views.
+
+Override paths with `LOCALLAB_IMAGE_MODELS_DIR`, `LOCALLAB_SEEDVR2_DIR`,
+`LOCALLAB_AI_ROOT` or `LOCALLAB_HF_HOME`. Normal runs remain offline. Model files
+and generated images are never stored in Git.
+
+Checks: `node scripts/test-image-stack.mjs` verifies adapter contracts without
+models. `~/.local/share/uv/tools/mflux/bin/python scripts/test-noct-conversion.py`
+checks the expansion math. `node scripts/smoke-image-stack.mjs MODEL OUTPUT_DIR
+[REFERENCE_IMAGE] [stock|heretic]` runs a real adapter on installed weights.
 
 ## DeepSeek V4.1 Flash 1017
 

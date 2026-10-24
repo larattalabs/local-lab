@@ -2,6 +2,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Adapter, RunContext } from './types'
 import type { ParamSpec } from '@shared/types'
+import { imageStackAdapters } from './image-stack'
 
 const home = homedir()
 const KREA2_DIR = process.env.LOCALLAB_KREA2_DIR ?? join(home, 'AI', 'krea2-mlx')
@@ -150,8 +151,8 @@ const MFLUX: MfluxSpec[] = [
   // Qwen-Image 2.1 — a NEW 7B single-stream architecture, not a point release
   // of the 20B original above; needs mflux >= 0.20 (mflux-generate-qwen-2.1).
   // Not distilled: 40 steps is the tuned default (~78s at 1024² on an M5 Max).
-  // mflux ports txt2img + img2img only — upstream's multi-reference editing
-  // needs the Qwen3-VL vision tower, which the port defers.
+  // This original entry keeps strength-based img2img; instruction editing
+  // is exposed separately in image-stack.ts.
   { id: 'qwen-image-2.1', label: 'Qwen Image 2.1', bin: 'mflux-generate-qwen-2.1',
     notes: '7B, native 2K. Typography, portrait lighting, fine detail. 40 steps — slow but sharp.',
     defaultSteps: 40, approxPeakGb: 46, singleImage: true },
@@ -253,4 +254,4 @@ function mfluxAdapter(spec: MfluxSpec): Adapter {
   }
 }
 
-export const imageAdapters: Adapter[] = [krea2, ...MFLUX.map(mfluxAdapter)]
+export const imageAdapters: Adapter[] = [krea2, ...imageStackAdapters, ...MFLUX.map(mfluxAdapter)]
