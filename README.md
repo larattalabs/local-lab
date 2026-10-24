@@ -135,7 +135,7 @@ Use mflux 0.23.0 on Python 3.12. Pillow is pinned because 13.0.0 fails to import
 on this runtime:
 
 ```sh
-uv tool install --force --python 3.12 --with 'pillow==12.1.1' 'mflux==0.23.0'
+uv tool install --force --python 3.12 --with 'pillow==12.3.0' 'mflux==0.23.0'
 ~/.local/share/uv/tools/mflux/bin/python scripts/setup-image-stack.py
 ```
 
@@ -163,6 +163,19 @@ Checks: `node scripts/test-image-stack.mjs` verifies adapter contracts without
 models. `~/.local/share/uv/tools/mflux/bin/python scripts/test-noct-conversion.py`
 checks the expansion math. `node scripts/smoke-image-stack.mjs MODEL OUTPUT_DIR
 [REFERENCE_IMAGE] [stock|heretic]` runs a real adapter on installed weights.
+
+Measured on an M5 Max / 128 GB, including loading, at 1024×1024 and default
+full precision (one run per case; these are smoke-test timings):
+
+| Model | Generation | Reference edit |
+|---|---:|---:|
+| Qwen 2.1 Turbo | 40 s | 52 s |
+| Qwen 2.1 Turbo + Heretic | 64 s | 54 s |
+| Qwen 2.1 | 162 s | 186 s |
+| Noct Q V4, guidance 3 | 190 s | 240 s |
+| FLUX 3 Image Klein | 46 s | 97 s |
+
+SeedVR2's 256→512 test took 15 s. Larger inputs increase both time and memory.
 
 ## DeepSeek V4.1 Flash 1017
 
@@ -223,7 +236,7 @@ when deliberately pulling something new.
 ## Status
 
 All four modalities are verified end-to-end on real hardware: text (Ollama,
-streamed), image (Krea 2 + FLUX.2 side by side), video (LTX-2.3 with audio),
+streamed), image (Krea 2, Qwen 2.1/Turbo, Noct Q, FLUX.2/3 and SeedVR2), video (LTX-2.3 with audio),
 and music (ACE-Step text-to-music and remix/cover both). ACE-Step runs through
 `resources/workers/acestep_worker.py`; if a future ACE-Step update breaks it,
 the fix belongs in the worker, not the adapter.
