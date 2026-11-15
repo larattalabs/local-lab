@@ -11,12 +11,14 @@ for (const name of ['qwen-image-2.1-turbo', 'qwen-image-2.1', 'flux3-image-klein
 }
 mkdirSync(join(root, 'qwen-image-2.1-turbo-alternate', 'text_encoder'), { recursive: true })
 writeFileSync(join(root, 'photo.safetensors'), '')
+writeFileSync(join(root, 'identity.safetensors'), '')
 writeFileSync(join(root, 'profiles.json'), JSON.stringify({
   models: [false, true].map((edit) => ({ id: 'qwen-local' + (edit ? '-edit' : ''), label: 'Local Qwen',
     model: 'qwen-local', base: 'qwen-image-2.1', command: 'mflux-generate-qwen-2.1' + (edit ? '-edit' : ''),
     steps: 25, qwen: true, edit, stepReuse: !edit })),
   encoders: { 'qwen-2.1': [{ id: 'alternate', label: 'Alternate', suffix: '-alternate' }] },
-  loras: [{ id: 'photo', label: 'Photo style', path: 'photo.safetensors', scale: 0.75 }],
+  loras: [{ id: 'photo', label: 'Photo style', path: 'photo.safetensors', scale: 0.75 },
+    { id: 'identity', label: 'Character', path: 'identity.safetensors', family: 'qwen-2.1' }],
 }))
 try {
   const adapters = await loadImageAdapters()
@@ -40,6 +42,24 @@ try {
   assert.deepEqual(spec.args.slice(spec.args.indexOf('--lora') + 1, spec.args.indexOf('--lora') + 3),
     [join(root, 'photo.safetensors'), '0.75'])
   assert.throws(() => get('flux3-klein').build({ ...context, params: { lora: 'missing' } }), /Unknown image adapter/)
+  assert.throws(() => get('flux3-klein').build({ ...context, params: { lora: 'identity' } }), /Unknown image adapter/)
+  for (const id of ['qwen-image-2.1-edit', 'qwen-local', 'qwen-local-edit']) {
+    const input = { ...context, images: id.endsWith('-edit') ? ['reference.png'] : [] }
+    assert.throws(() => get(id).build({ ...input, params: { lora: 'photo' } }), /Unknown image adapter/)
+    const choices = get(id).params.find((p) => p.key === 'lora').options.map((o) => o.value)
+    assert.deepEqual(choices, ['', 'identity'])
+    spec = get(id).build({ ...input, params: { lora: 'identity', lora_scale: 0.8 } })
+    const at = spec.args.indexOf('--lora')
+    assert.deepEqual(spec.args.slice(at + 1, at + 3), [join(root, 'identity.safetensors'), '0.8'])
+    assert(spec.args.includes('--no-bake-lora'))
+    for (const strength of [-1, 3, 'bad', Infinity]) {
+      assert.throws(() => get(id).build({ ...input, params: { lora: 'identity', lora_scale: strength } }),
+        /Adapter strength must be between/)
+    }
+  }
+  spec = get('flux3-klein').build({ ...context, params: { lora: 'photo', lora_scale: 0.8 } })
+  assert.equal(Number(spec.args[spec.args.indexOf('--lora') + 2]), 0.75 * 0.8)
+  assert(!spec.args.includes('--no-bake-lora'))
   assert.throws(() => get('qwen-image-2.1-turbo').build({ ...context, params: { encoder: 'missing' } }), /Unknown text encoder/)
   const upscale = get('seedvr2')
   assert.equal(upscale.promptOptional, true)

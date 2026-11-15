@@ -41,7 +41,7 @@ interface ImageModel {
 }
 
 interface LocalChoice { id: string; label: string; suffix: string }
-interface LocalLora { id: string; label: string; path: string; scale?: number }
+interface LocalLora { id: string; label: string; path: string; scale?: number; family?: 'qwen-2.1' | 'flux-3' }
 interface LocalProfiles {
   models?: ImageModel[]
   encoders?: Record<string, LocalChoice[]>
@@ -63,7 +63,8 @@ function imageModel(spec: ImageModel): Adapter {
   const bin = BIN(spec.command)
   const family = spec.qwen ? 'qwen-2.1' : 'flux-3'
   const encoders = local.encoders?.[family] ?? []
-  const loras = spec.qwen ? [] : local.loras ?? []
+  // Existing unscoped profiles are FLUX 3 adapters. LoRAs are architecture-specific.
+  const loras = (local.loras ?? []).filter((lora) => (lora.family ?? 'flux-3') === family)
   const encoder: ParamSpec = {
     key: 'encoder', label: 'Text encoder', type: 'select', default: 'stock',
     options: [{ value: 'stock', label: 'Stock' }, ...encoders.map((e) => ({ value: e.id, label: e.label }))],
@@ -84,6 +85,9 @@ function imageModel(spec: ImageModel): Adapter {
     params: [aspect, ...(encoders.length ? [encoder] : []),
       ...(loras.length ? [{ key: 'lora', label: 'Image adapter', type: 'select', default: '',
         options: [{ value: '', label: 'Off' }, ...loras.map((l) => ({ value: l.id, label: l.label }))],
+      } satisfies ParamSpec, { key: 'lora_scale', label: 'Adapter strength', type: 'float',
+        default: 1, min: 0, max: 2, step: 0.05, advanced: true,
+        help: 'Adjust the selected image adapter. Lower values give the prompt more freedom.',
       } satisfies ParamSpec] : []),
       ...(!spec.turbo ? [{ key: 'steps', label: 'Steps', type: 'int', default: spec.steps,
         min: 1, max: 60 } satisfies ParamSpec] : []), seed, precision,
@@ -119,7 +123,13 @@ function imageModel(spec: ImageModel): Adapter {
         const file = join(MODELS, lora.path)
         if (!existsSync(file)) throw new Error('Selected image adapter is not installed.')
         if (!Number.isFinite(lora.scale ?? 1)) throw new Error('Invalid image adapter scale.')
-        args.push('--lora', file, String(lora.scale ?? 1))
+        const strength = Number(params.lora_scale ?? 1)
+        if (!Number.isFinite(strength) || strength < 0 || strength > 2) {
+          throw new Error('Adapter strength must be between 0 and 2.')
+        }
+        args.push('--lora', file, String((lora.scale ?? 1) * strength))
+        // Keep small identity updates intact rather than rounding them into BF16 weights.
+        if (spec.qwen) args.push('--no-bake-lora')
       }
       if (spec.edit) args.push('--image-paths', ...images)
       args.push('--prompt', prompt, '--width', String(w), '--height', String(h),

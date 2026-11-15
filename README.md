@@ -152,13 +152,20 @@ Personal checkpoints and optional encoders/LoRAs belong in an external
   "encoders": {
     "flux-3": [{"id": "alternate", "label": "Alternate", "suffix": "-alternate"}]
   },
-  "loras": [{"id": "photo", "label": "Photo style", "path": "adapters/photo.safetensors", "scale": 1}]
+  "loras": [
+    {"id": "photo", "label": "Photo style", "path": "adapters/photo.safetensors", "scale": 1},
+    {"id": "character", "label": "Character", "family": "qwen-2.1", "path": "adapters/character.safetensors", "scale": 1}
+  ]
 }
 ```
 
 Encoder suffixes select composed model views (for example,
 `flux3-image-klein-alternate`) that share the transformer and VAE. LoRAs appear
-on FLUX generation and editing entries. Keep source revisions, licenses and
+in **Image adapter** on FLUX 3, Qwen 2.1 instruction editing, and custom Qwen
+profiles. Set `family: "qwen-2.1"` for Qwen adapters or `family: "flux-3"` for
+FLUX 3; existing entries without a family retain their FLUX 3 behavior.
+**Adapter strength** multiplies the configured scale. Qwen adapters use runtime
+application to preserve small weight updates. Keep source revisions, licenses and
 conversion records beside private model assets. The generic
 `scripts/expand-int8-checkpoint.py` expands compatible tensorwise INT8 ConvRot
 checkpoints to BF16, preserving the source quantization approximation.
