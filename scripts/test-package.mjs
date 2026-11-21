@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, statSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, statSync, rmSync } from 'node:fs'
+import { X509Certificate } from 'node:crypto'
+import tls from 'node:tls'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import https from 'node:https'
@@ -38,7 +40,13 @@ try {
   const status=await evaluate('window.lab.phoneEnable()')
   assert(status.enabled, status.error)
   const ca=readFileSync(join(userData,'phone/ca.pem'))
-  const get=path=>new Promise((r,j)=>https.get({host:'127.0.0.1',port:phone,servername:'localhost',path,ca},res=>{let body='';res.on('data',c=>body+=c);res.on('end',()=>{try{assert.equal(res.statusCode,200);r(body)}catch(e){j(e)}})}).on('error',j))
+  // On a TLS failure, report which certificate the server presented versus the CA the test trusted.
+  const diagnose=e=>new Promise(r=>{const s=tls.connect({host:'127.0.0.1',port:phone,servername:'localhost',rejectUnauthorized:false},()=>{
+    const peer=s.getPeerX509Certificate(),trusted=new X509Certificate(ca)
+    e.message+=`\nserved: subject=${peer?.subject} issuer=${peer?.issuer} checkIssued=${peer?.checkIssued(trusted)} verify=${peer?.verify(trusted.publicKey)}`
+      +`\ntrusted CA: subject=${trusted.subject} fp=${trusted.fingerprint256}\napp CA fp: ${status.fingerprint}\nphone dir: ${readdirSync(join(userData,'phone')).join(' ')}`
+    s.end();r(e)});s.on('error',x=>{e.message+='\ndiagnostic connect failed: '+x.message;r(e)})})
+  const get=path=>new Promise((r,j)=>https.get({host:'127.0.0.1',port:phone,servername:'localhost',path,ca},res=>{let body='';res.on('data',c=>body+=c);res.on('end',()=>{try{assert.equal(res.statusCode,200);r(body)}catch(e){j(e)}})}).on('error',e=>diagnose(e).then(j,j)))
   const html=await get('/')
   const entry=html.match(/src="([^"]+\.js)"/)?.[1];assert(entry)
   assert((await get(new URL(entry,'https://localhost/').pathname)).includes('Compare motion'))
