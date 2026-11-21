@@ -1,6 +1,9 @@
+import { accessSync, constants } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+const exec = promisify(execFile)
 import type { Adapter, RunContext } from './types'
 
 const home = homedir()
@@ -10,7 +13,7 @@ const OLLAMA_HOST = process.env.OLLAMA_HOST ?? '127.0.0.1:11434'
 
 function ollamaBin(): string {
   for (const c of [OLLAMA, OLLAMA_ALT, join(home, '.local', 'bin', 'ollama')]) {
-    try { execFileSync('/bin/test', ['-x', c]); return c } catch { /* next */ }
+    try { accessSync(c, constants.X_OK); return c } catch { /* next */ }
   }
   return OLLAMA
 }
@@ -20,9 +23,9 @@ function ollamaBin(): string {
  * point is that the user pulls new ones and they show up. `ollama list` is
  * cheap enough to run on every registry build.
  */
-export function discoverOllamaModels(): string[] {
+export async function discoverOllamaModels(): Promise<string[]> {
   try {
-    const out = execFileSync(ollamaBin(), ['list'], { encoding: 'utf8', timeout: 5000 })
+    const { stdout: out } = await exec(ollamaBin(), ['list'], { encoding: 'utf8', timeout: 5000 })
     return out.split('\n').slice(1)
       .map((l) => l.trim().split(/\s+/)[0])
       .filter((n) => n && n !== 'NAME')
@@ -115,6 +118,6 @@ function ollamaAdapter(model: string): Adapter {
   }
 }
 
-export function textAdapters(): Adapter[] {
-  return discoverOllamaModels().map(ollamaAdapter)
+export async function textAdapters(): Promise<Adapter[]> {
+  return (await discoverOllamaModels()).map(ollamaAdapter)
 }

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Chat } from '@shared/types'
 import { RUNS_DIR } from './env'
@@ -38,7 +38,9 @@ export function listChats(): Chat[] {
 
 export function saveChat(chat: Chat): void {
   mkdirSync(CHATS_DIR, { recursive: true })
-  writeFileSync(chatPath(chat.id), JSON.stringify(chat, null, 2))
+  const target = chatPath(chat.id)
+  writeFileSync(target + '.tmp', JSON.stringify(chat, null, 2), { mode: 0o600 })
+  renameSync(target + '.tmp', target)
 }
 
 export function deleteChat(id: string): void {

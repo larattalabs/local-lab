@@ -1,12 +1,17 @@
+import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Adapter, RunContext } from './types'
 import type { ParamSpec } from '@shared/types'
-import { imageStackAdapters } from './image-stack'
+import { imageStackAdapters, localImageLoras, localImageLoraFile } from './image-stack'
+import { h3ImageAdapters } from './h3-image'
+import { runtimeProfile } from './local-runtime'
+import { nativeQwenConfigured, qwenEngineParam, mfluxOnly, usesNativeQwen, qwenSpawn } from './qwen-runtime'
 
 const home = homedir()
 const KREA2_DIR = process.env.LOCALLAB_KREA2_DIR ?? join(home, 'AI', 'krea2-mlx')
 const KREA2_PY = join(KREA2_DIR, '.venv', 'bin', 'python')
+const KREA2_SCRIPT = runtimeProfile('krea2').script ?? join(KREA2_DIR, 'generate.py')
 const BIN = (name: string) => join(home, '.local', 'bin', name)
 
 /** Dimensions must be multiples of 64 for these models. */
@@ -60,7 +65,7 @@ const krea2: Adapter = {
   outputExt: 'png',
   approxPeakGb: 18,
   acceptsImages: true,
-  requires: [KREA2_PY, join(KREA2_DIR, 'generate.py')],
+  requires: [KREA2_PY, KREA2_SCRIPT],
   params: [
     aspectParam,
     { key: 'steps', label: 'Steps', type: 'int', default: 8, min: 1, max: 50,
@@ -80,7 +85,7 @@ const krea2: Adapter = {
   build({ prompt, params, outPath, images }: RunContext) {
     const [w, h] = dims(params)
     const args = [
-      'generate.py', prompt,
+      KREA2_SCRIPT, prompt,
       '--precision', String(params.precision ?? '8bit'),
       '--steps', String(num(params, 'steps', 8)),
       '--width', String(w), '--height', String(h),
@@ -183,8 +188,11 @@ const MFLUX: MfluxSpec[] = [
 
 function mfluxAdapter(spec: MfluxSpec): Adapter {
   const bin = BIN(spec.bin)
+  const localModel = runtimeProfile(spec.id).model
+  const native = spec.id === 'qwen-image-2.1' && nativeQwenConfigured
   const params: ParamSpec[] = [
     aspectParam,
+    ...(native ? [qwenEngineParam] : []),
     { key: 'steps', label: 'Steps', type: 'int', default: spec.defaultSteps, min: 1, max: 60 },
     seedParam,
     { key: 'guidance', label: 'Guidance', type: 'float', default: null,
@@ -201,8 +209,25 @@ function mfluxAdapter(spec: MfluxSpec): Adapter {
         { value: '4', label: '4-bit' }, { value: '3', label: '3-bit' },
       ] },
   ]
+  const turboLoras = spec.id === 'z-image-turbo' ? localImageLoras('z-image-turbo') : []
+  const slots = [
+    { key: 'lora', label: 'Identity', role: 'identity' },
+    { key: 'visual_style', label: 'Visual style', role: 'style' },
+  ].map((slot) => ({ ...slot, choices: turboLoras.filter((lora) => lora.role === slot.role) }))
+  for (const { key, label, choices } of slots) {
+    if (!choices.length) continue
+    params.push({ key, label, type: 'select', default: '',
+      options: [{ value: '', label: 'Off' }, ...choices.map(({ id, label }) => ({ value: id, label }))] },
+    { key: key + '_scale', label: label + ' strength', type: 'float', default: 1,
+      min: 0, max: 2, step: 0.05, advanced: true })
+  }
+  if (native) {
+    const index = params.findIndex((p) => p.key === 'quantize')
+    params[index] = mfluxOnly(params[index])
+  }
   if ((spec.singleImage && spec.strengthFlag !== null) || spec.strengthFlag) {
     params.push({ key: 'image_strength', label: 'Image strength', type: 'float',
+      ...(native ? { visibleWhen: { key: 'image_engine', value: 'mflux' } } : {}),
       default: 0.4, min: 0, max: 1, step: 0.05,
       help: 'How strongly the input image constrains the result. 0 = ignore it.' })
   }
@@ -215,15 +240,18 @@ function mfluxAdapter(spec: MfluxSpec): Adapter {
     outputExt: 'png',
     approxPeakGb: spec.approxPeakGb,
     acceptsImages: Boolean(spec.multiImage || spec.singleImage),
+    ...(spec.id === 'qwen-image-2.1' ? { imageEditAdapterId: 'qwen-image-2.1-edit' } : {}),
     requiresImage: spec.requiresImage,
-    requires: [bin],
+    requires: [bin, ...(localModel ? [join(localModel, 'text_encoder'), join(localModel, 'transformer'), join(localModel, 'vae')] : [])],
     params,
     build({ prompt, params: p, outPath, images }: RunContext) {
+      const useNative = native && usesNativeQwen(p)
       const [w, h] = dims(p)
       const args: string[] = []
       if (spec.baseModel) args.push('--base-model', spec.baseModel)
+      if (localModel) args.push('--model', localModel)
       const q = String(p.quantize ?? spec.quantize ?? '')
-      if (q) args.push('-q', q)
+      if (!useNative && q) args.push('-q', q)
 
       // Reference images must precede --prompt for the variadic form: any
       // token after `--image-paths a b c` would otherwise be swallowed as
@@ -242,6 +270,26 @@ function mfluxAdapter(spec: MfluxSpec): Adapter {
         }
       }
 
+      if (spec.id === 'z-image-turbo') {
+        for (const { key, label, choices } of slots) {
+          if (!p[key]) continue
+          const choice = choices.find((item) => item.id === p[key])
+          if (!choice) throw new Error(`Unknown ${label.toLowerCase()} for ${spec.label}.`)
+          const path = localImageLoraFile(choice.path)
+          if (!existsSync(path)) throw new Error(`Selected ${label.toLowerCase()} is missing: ${path}`)
+          const strength = Number(p[key + '_scale'] ?? 1)
+          const scale = strength * (choice.scale ?? 1)
+          if (!Number.isFinite(scale) || strength < 0 || strength > 2) {
+            throw new Error(`Invalid ${label.toLowerCase()} strength.`)
+          }
+          if (scale === 0) continue
+          args.push('--lora', path, String(scale))
+          const trigger = choice.trigger?.trim()
+          if (trigger && !prompt.toLowerCase().split(/[^\p{L}\p{N}_-]+/u).includes(trigger.toLowerCase())) {
+            prompt = `${trigger}, ${prompt}`
+          }
+        }
+      }
       args.push('--prompt', prompt,
         '--width', String(w), '--height', String(h),
         '--steps', String(num(p, 'steps', spec.defaultSteps)),
@@ -249,9 +297,9 @@ function mfluxAdapter(spec: MfluxSpec): Adapter {
       if (p.seed != null && p.seed !== '') args.push('--seed', String(p.seed))
       if (p.guidance != null && p.guidance !== '') args.push('--guidance', String(p.guidance))
       if (p.negative) args.push('--negative-prompt', String(p.negative))
-      return { bin, args }
+      return native ? qwenSpawn({ bin, args }, p) : { bin, args }
     },
   }
 }
 
-export const imageAdapters: Adapter[] = [krea2, ...imageStackAdapters, ...MFLUX.map(mfluxAdapter)]
+export const imageAdapters: Adapter[] = [krea2, ...imageStackAdapters, ...h3ImageAdapters, ...MFLUX.map(mfluxAdapter)]

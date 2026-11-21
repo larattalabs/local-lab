@@ -1,3 +1,5 @@
+import { wanAdapters } from './wan'
+import { runtimeProfile } from './local-runtime'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { AI_ROOT } from '../env'
@@ -10,7 +12,7 @@ const LTX_PY = join(LTX_VENV, 'bin', 'python')
 // mlx_video's DEFAULT repo is the older ltx2-mlx-av; the weights cached on this
 // machine (and what VideoStuff runs daily) are the 2.3 repo. Omitting the flag
 // therefore fails under offline mode even though the model is fully present.
-const LTX_ENCODER = process.env.LOCALLAB_LTX_ENCODER_DIR ?? join(AI_ROOT, 'video-stack', 'ltx-text-encoder')
+const LTX_ENCODER = runtimeProfile('ltx-2.3').encoder ?? process.env.LOCALLAB_LTX_ENCODER_DIR ?? join(AI_ROOT, 'video-stack', 'ltx-text-encoder')
 const LTX_MODEL_REPO = process.env.LOCALLAB_LTX_MODEL_REPO ?? 'notapalindrome/ltx23-mlx-av'
 
 function num(p: Record<string, unknown>, k: string, d: number): number {
@@ -102,7 +104,7 @@ const ltx: Adapter = {
   },
 }
 
-export const videoAdapters: Adapter[] = [ltx, ...videoStackAdapters]
+export const videoAdapters: Adapter[] = [ltx, ...videoStackAdapters, ...wanAdapters]
 if (new Set(videoAdapters.map((adapter) => adapter.id)).size !== videoAdapters.length) {
   throw new Error('Video adapter IDs must be unique, including local profiles.')
 }

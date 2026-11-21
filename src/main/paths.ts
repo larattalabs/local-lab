@@ -1,4 +1,3 @@
-import { app } from 'electron'
 import { join } from 'node:path'
 
 /**
@@ -7,7 +6,7 @@ import { join } from 'node:path'
  * means they cannot live inside the asar bundle.
  */
 export function workerPath(name: string): string {
-  return app.isPackaged
-    ? join(process.resourcesPath, 'workers', name)
-    : join(app.getAppPath(), 'resources', 'workers', name)
+  if (!process.versions.electron) return join(process.cwd(), 'resources', 'workers', name)
+  if (process.defaultApp) return join(__dirname, '..', '..', 'resources', 'workers', name)
+  return join(process.resourcesPath, 'workers', name)
 }

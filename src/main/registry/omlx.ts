@@ -1,4 +1,6 @@
-import { execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+const exec = promisify(execFile)
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -25,9 +27,9 @@ const THINK_RULE = '\n───\n'
  * Without the fallback the whole Text tab would look empty whenever the server
  * happened to be stopped, which is its normal resting state.
  */
-function fromServer(): string[] {
+async function fromServer(): Promise<string[]> {
   try {
-    const out = execFileSync(
+    const { stdout: out } = await exec(
       '/usr/bin/curl',
       ['-s', '--max-time', '2', `http://${OMLX_HOST}/v1/models`],
       { encoding: 'utf8', timeout: 4000 }
@@ -59,8 +61,8 @@ function hasVision(id: string): boolean {
   }
 }
 
-export function discoverOmlxModels(): string[] {
-  const ids = fromServer()
+export async function discoverOmlxModels(): Promise<string[]> {
+  const ids = await fromServer()
   return ids.length ? ids : fromDisk()
 }
 
@@ -196,6 +198,6 @@ function omlxAdapter(model: string): Adapter {
   }
 }
 
-export function omlxAdapters(): Adapter[] {
-  return discoverOmlxModels().map(omlxAdapter)
+export async function omlxAdapters(): Promise<Adapter[]> {
+  return (await discoverOmlxModels()).map(omlxAdapter)
 }

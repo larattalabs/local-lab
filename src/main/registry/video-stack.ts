@@ -1,8 +1,10 @@
+import { readProfile, profileIssues, unavailable } from './profile-config'
 import { existsSync, readFileSync } from 'node:fs'
 import { randomInt } from 'node:crypto'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join } from 'node:path'
 import { AI_ROOT } from '../env'
+import { runtimeProfile } from './local-runtime'
 import type { ParamSpec } from '@shared/types'
 import type { Adapter } from './types'
 
@@ -25,8 +27,7 @@ interface VideoProfile {
   ltxVersion?: '2.3' | '2.5'
 }
 
-const local: { models?: VideoProfile[] } = existsSync(configPath)
-  ? JSON.parse(readFileSync(configPath, 'utf8')) : {}
+const local: { models?: VideoProfile[] } = readProfile(configPath, {}, 'video-profiles')
 const pathFor = (path: string) => isAbsolute(path) ? path : join(ROOT, path)
 const seed: ParamSpec = { key: 'seed', label: 'Seed', type: 'seed', default: 42 }
 const resolution: ParamSpec = {
@@ -42,6 +43,9 @@ function integer(value: unknown, fallback: number, min: number, max: number, lab
 }
 
 function videoModel(spec: VideoProfile): Adapter {
+  const runtime = runtimeProfile(spec.id)
+  spec = { ...spec, ...(runtime.model ? { model: runtime.model } : {}),
+    ...(runtime.encoder ? { encoder: runtime.encoder } : {}) }
   if (!spec.id || !spec.label || !spec.model || !['h3-native', 'ltx-mlx'].includes(spec.engine)
     || (spec.steps != null && (!Number.isInteger(spec.steps) || spec.steps < 1 || spec.steps > 50))) {
     throw new Error(`Invalid local video profile in ${configPath}`)
@@ -65,7 +69,7 @@ function videoModel(spec: VideoProfile): Adapter {
   const approximate = h3 && spec.allowApproximation !== false
   const frames = h3 ? [22, 56, 124, 243] : [49, 97, 121, 161, 241]
   return {
-    id: spec.id, label: spec.label, modality: 'video', family: spec.engine,
+    id: spec.id, frameRate: 24, label: spec.label, modality: 'video', family: spec.engine,
     outputExt: 'mp4', acceptsImages: true, approxPeakGb: h3 ? 80 : 45,
     notes: spec.notes ?? (h3
       ? 'Native Metal. Generates sound at 24 FPS; layer thinning and prediction reuse trade fidelity for speed.'
@@ -91,6 +95,11 @@ function videoModel(spec: VideoProfile): Adapter {
             { value: 'diffusion', label: 'Diffusion (experimental)' }],
           help: 'The diffusion decoder can improve detail at extra time and memory cost.' } satisfies ParamSpec,
       ] : []),
+      ...(ltx25 ? [{
+        key: 'compute_precision', label: 'Compute precision', type: 'select', default: 'float16', advanced: true,
+        options: [{ value: 'float16', label: 'FP16 (faster)' }, { value: 'float32', label: 'FP32 (reference)' }],
+        help: 'FP16 speeds up denoising while retaining full-precision residuals. Small visual differences are possible; use FP32 to compare.',
+      } satisfies ParamSpec] : []),
       ...(approximate ? [
         { key: 'layers', label: 'Transformer layers', type: 'select', default: '45', advanced: true,
           options: [{ value: '50', label: '50 (all)' }, { value: '45', label: '45 (balanced)' }, { value: '40', label: '40 (draft)' }] } satisfies ParamSpec,
@@ -133,6 +142,11 @@ function videoModel(spec: VideoProfile): Adapter {
       if (spec.diffusionDecoder) args.push('--video-decoder', decoder)
       if (params.no_audio !== false) args.push('--no-audio')
       if (images.length) args.push('--image', images[0], '0', '1.0')
+      if (ltx25) {
+        const precision = String(params.compute_precision ?? 'float16')
+        if (!['float16', 'float32'].includes(precision)) throw new Error('Choose FP16 or FP32 compute precision.')
+        return { bin, args, env: { LTX2_COMPUTE_DTYPE: precision, LTX2_SOL_TAU: 'off' } }
+      }
       return { bin, args }
     },
   }
@@ -141,8 +155,14 @@ function videoModel(spec: VideoProfile): Adapter {
 export const videoStackAdapters: Adapter[] = [
   videoModel({ id: 'minimax-h3', label: 'MiniMax H3', engine: 'h3-native', model: 'h3-stock' }),
   videoModel({ id: 'ltx-2.5', label: 'LTX-2.5', engine: 'ltx-mlx', model: 'ltx-2.5', ltxVersion: '2.5', diffusionDecoder: true }),
-  ...(local.models ?? []).map(videoModel),
 ]
-if (new Set(videoStackAdapters.map((a) => a.id)).size !== videoStackAdapters.length) {
-  throw new Error(`Duplicate video profile IDs in ${configPath}`)
+const videoIds = new Set(videoStackAdapters.map(a=>a.id))
+for (const spec of Array.isArray(local.models) ? local.models : []) {
+  const id = spec?.id || 'unnamed-video-profile'
+  if (videoIds.has(id)) { profileIssues.set('video-profiles','Duplicate video profile ID: '+id); continue }
+  videoIds.add(id)
+  try { videoStackAdapters.push(videoModel(spec)) }
+  catch(error) { videoStackAdapters.push(unavailable(id,'video',String(error))) }
 }
+if (local.models && !Array.isArray(local.models)) profileIssues.set('video-profiles','Expected an array of video models.')
+if (profileIssues.has('video-profiles')) videoStackAdapters.push(unavailable('video-profiles','video',profileIssues.get('video-profiles')!))

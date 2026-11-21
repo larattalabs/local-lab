@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, realpathSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import type { Adapter } from './registry/types'
 import type { Job, Modality, RunRecord } from '@shared/types'
@@ -10,11 +10,15 @@ const MODALITIES: Modality[] = ['image', 'video', 'music', 'text']
 export function writeRunRecord(dir: string, adapter: Adapter, job: Job): void {
   if (job.state !== 'done' && job.state !== 'error' && job.state !== 'cancelled') return
   const rec: RunRecord = {
-    dir,
+    dir, details: job.details, parentIds:job.parentIds,
     modality: adapter.modality,
     adapterId: adapter.id,
     adapterLabel: adapter.label,
     prompt: job.prompt,
+    originalPrompt: job.originalPrompt,
+    director: job.director,
+    basic: job.basic,
+    images: job.images,
     params: job.params,
     state: job.state,
     queuedAt: job.queuedAt,
@@ -89,8 +93,11 @@ export function listRuns(): RunRecord[] {
 
 /** Delete a run directory. Refuses anything outside RUNS_DIR. */
 export function deleteRun(dir: string): void {
-  const target = resolve(dir)
-  if (!target.startsWith(resolve(RUNS_DIR) + '/')) {
+  if (lstatSync(dir).isSymbolicLink()) throw new Error("Choose a run directory.")
+  const target = realpathSync(dir)
+  const relative = target.slice(realpathSync(RUNS_DIR).length + 1).split('/')
+  if (!target.startsWith(realpathSync(RUNS_DIR) + '/') || relative.length !== 2 ||
+      !MODALITIES.includes(relative[0] as Modality) || !(existsSync(join(target,'run.json')) || /^\d{4}-.*Z_/.test(relative[1]))) {
     throw new Error('refusing to delete outside the runs folder')
   }
   rmSync(target, { recursive: true, force: true })
