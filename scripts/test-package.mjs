@@ -30,6 +30,9 @@ try {
     socket.send(JSON.stringify({id:1,method:'Runtime.evaluate',params:{expression,awaitPromise:true,returnByValue:true}}))
     return response
   }
+  // The renderer target can appear before the preload has exposed its API (seen on slower CI runners).
+  for(let i=0;i<160&&!(await evaluate('typeof window.lab==="object"&&document.readyState!=="loading"'));i++)await delay(125)
+  assert.equal(await evaluate('typeof window.lab'),'object','Packaged preload did not expose window.lab within 20 s')
   assert.equal(await evaluate('window.lab.runsDir()'),runs)
   assert.equal((await evaluate('window.lab.historyState()')).resetId,'initial')
   const status=await evaluate('window.lab.phoneEnable()')
