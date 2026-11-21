@@ -40,7 +40,7 @@ export interface Adapter extends AdapterInfo {
 /** Strip the functions and internals so the object can cross the IPC bridge. */
 export function toInfo(a: Adapter): AdapterInfo {
   return {
-    id: a.id,
+    id: a.id, frameRate: a.frameRate,
     label: a.label,
     modality: a.modality,
     family: a.family,
@@ -48,6 +48,7 @@ export function toInfo(a: Adapter): AdapterInfo {
     outputExt: a.outputExt,
     params: a.params,
     acceptsImages: a.acceptsImages,
+    imageEditAdapterId: a.imageEditAdapterId,
     requiresImage: a.requiresImage,
     promptOptional: a.promptOptional,
     acceptsAudio: a.acceptsAudio,

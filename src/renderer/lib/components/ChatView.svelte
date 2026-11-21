@@ -1,13 +1,24 @@
 <script lang="ts">
   import type { ChatMessage, Job, Modality, RunRecord } from '@shared/types'
+  import { directorFlow } from '../stores/director.svelte'
   import { store } from '../stores/lab.svelte'
-  import { fileUrl } from '../api'
+  import { fileUrl, lab, isWeb } from '../api'
   import ModelDropdown from './ModelDropdown.svelte'
   import ParamPanel from './ParamPanel.svelte'
   import AnimateImage from './AnimateImage.svelte'
+  import BasicComposer from './BasicComposer.svelte'
+  import PresetEditor from './PresetEditor.svelte'
+  import { basicFlow } from '../stores/basic.svelte'
+  import { basicDefaults } from '@shared/basic'
+  let presetMessage = $state<ChatMessage>()
 
-  let { modality, onNavigate }: { modality: Modality; onNavigate: (m: Modality) => void } = $props()
+  let { modality, onNavigate, basic = false, composerOnly = false, onAccepted }: { onAccepted?:()=>void; composerOnly?: boolean; basic?: boolean; modality: Modality; onNavigate: (m: Modality) => void } = $props()
+  let mobilePanel = $state<'chats' | 'settings' | null>(null)
+  let sending = $state(false)
   let animationSource = $state<string | null>(null)
+  let sendError = $state('')
+  let promptInput = $state<HTMLTextAreaElement | null>(null)
+  const imageTurn = $derived(!basic && modality === 'image' ? store.imageTurn() : undefined)
 
   const chats = $derived(store.chatsFor(modality))
   const chat = $derived(store.currentChat(modality))
@@ -21,10 +32,10 @@
     .filter((id) => store.isAvailable(id))
     .every((id) => store.adapters.find((a) => a.id === id)?.promptOptional))
   const runnable = $derived(selectedCount > 0 &&
-    (store.prompts[modality].trim().length > 0 || promptOptional))
+    (store.prompts[modality].trim().length > 0 || promptOptional) && !imageTurn?.error)
   const wantsImages = $derived(
     store.selected[modality].some(
-      (id) => store.adapters.find((a) => a.id === id)?.acceptsImages
+      (id) => { const a = store.adapters.find((a) => a.id === id); return a?.acceptsImages || a?.imageEditAdapterId }
     )
   )
   const wantsAudio = $derived(
@@ -64,10 +75,31 @@
     return m.jobId ? store.jobs.find((j) => j.id === m.jobId) : undefined
   }
 
+  function editImage(path: string) {
+    if (basic) basicFlow.source('image', path, 'edit')
+    else store.selectImageForEdit(path)
+    sendError = ''
+    promptInput?.focus()
+  }
+
+  function animate(path: string) {
+    if (basic) { basicFlow.animate(path); onNavigate('video') }
+    else animationSource = path
+  }
+
+  async function send() {
+    if (sending) return
+    sending = true
+    sendError = ''
+    try { if (await store.send(modality)) onAccepted?.() }
+    catch (error) { sendError = error instanceof Error ? error.message : String(error) }
+    finally { sending = false }
+  }
+
   function onKey(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !isWeb) {
       e.preventDefault()
-      if (runnable) store.send(modality)
+      if (runnable) void send()
     }
   }
 
@@ -86,17 +118,118 @@
     if (logEl) logEl.scrollTop = logEl.scrollHeight
   })
 
+  let logText = $state('')
+  async function showLog(message:string, jobId:string) {
+    if (openLog===message) { openLog=null;return }
+    openLog=message;logText='Loading…'
+    try { const text=await lab.jobLog?.(jobId);if(openLog===message)logText=text||'No output yet.' }
+    catch(error) { if(openLog===message)logText=String(error) }
+  }
   let openLog = $state<string | null>(null)
 </script>
 
-<div class="flex flex-1 min-h-0">
+{#snippet advancedComposer()}
+      <div class="composer border-t border-bench-700 bg-bench-900 p-3 shrink-0">
+        {#if imageTurn?.images.length}
+          <div class="mb-2 flex items-center gap-3 rounded border border-bench-700 p-2 text-[12px]">
+            {#if imageTurn.images[0].startsWith(store.runsDir + '/')}
+              <img src={fileUrl(imageTurn.images[0])} alt="Source for the next edit"
+                   class="h-14 w-14 rounded object-contain bg-bench-950" />
+            {/if}
+            <div>
+              <p class="text-bench-200">{imageTurn.fromSelection ? 'Selected image' : imageTurn.fromContext ? 'Previous image' : 'Attached image'}
+                → {[...new Set(imageTurn.routes.map(({ target }) => target?.label).filter(Boolean))].join(', ')}</p>
+              <p class="text-bench-500">Your next prompt will use {imageTurn.images.length === 1 ? 'this image' : `these ${imageTurn.images.length} images`}.</p>
+            </div>
+            {#if imageTurn.fromSelection}
+              <button class="ml-auto shrink-0 text-signal hover:text-bench-100"
+                      onclick={() => store.clearImageEditSource()}>{contextOn ? 'Use latest image' : 'Clear selection'}</button>
+            {/if}
+          </div>
+        {/if}
+        {#if imageTurn?.error || sendError}
+          <p role="alert" class="mb-2 text-[12px] text-fault">{imageTurn?.error || sendError}</p>
+        {/if}
+        <textarea bind:this={promptInput}
+          class="w-full resize-none rounded bg-bench-850 border border-bench-700 p-2.5 text-[13px]
+                 leading-relaxed outline-none focus:border-bench-600 placeholder:text-bench-600"
+          rows="2"
+          placeholder={promptOptional ? 'Optional note for this upscale…' : modality === 'text'
+            ? 'Ask something… (Enter to send, Shift+Enter for a new line)'
+            : `Describe what you want ${modality === 'music' ? 'to hear' : 'to see'}…`}
+          bind:value={store.prompts[modality]}
+          onkeydown={onKey}
+        ></textarea>
+
+        <div class="composer-actions flex items-center gap-2 mt-2">
+          <ModelDropdown {modality} />
+
+          <button
+            class="flex items-center gap-1.5 rounded border px-2.5 py-1 mono text-[11px] transition-colors
+                   {contextOn
+                     ? 'border-signal/50 text-signal'
+                     : 'border-bench-700 text-bench-500 hover:border-bench-600'}"
+            title={contextOn
+              ? 'Context on: text models see the conversation; image follow-ups use the previous image and a matching editor when available. Click for fresh one-offs.'
+              : 'Context off: every message runs fresh.'}
+            onclick={toggleContext}
+          >
+            <span class="size-1.5 rounded-full {contextOn ? 'bg-signal' : 'bg-bench-600'}"></span>
+            context
+          </button>
+
+          {#if wantsImages || wantsAudio}
+            <button
+              class="mono text-[11px] px-2 py-1 rounded border border-bench-700 text-bench-300
+                     hover:border-bench-600 hover:text-bench-100"
+              onclick={async () => {
+                try { store.images[modality] = wantsAudio ? await lab.pickAudio() : await lab.pickImages() }
+                catch (e) { sendError = e instanceof Error ? e.message : String(e) }
+              }}
+            >
+              {store.images[modality].length
+                ? wantsAudio
+                  ? store.images[modality][0].split('/').pop()
+                  : `${store.images[modality].length} image(s)`
+                : wantsAudio
+                  ? 'attach audio'
+                  : 'attach'}
+            </button>
+            {#if store.images[modality].length}
+              <button class="mono text-[11px] text-bench-400 hover:text-fault"
+                      onclick={() => (store.images[modality] = [])}>clear</button>
+            {/if}
+          {/if}
+
+          <div class="flex-1"></div>
+          <button
+            class="px-4 py-1.5 rounded text-[12px] font-medium transition-colors
+                   {runnable
+                     ? 'bg-signal text-bench-950 hover:brightness-110'
+                     : 'bg-bench-800 text-bench-600 cursor-not-allowed'}"
+            disabled={!runnable || sending}
+            onclick={send}
+          >
+            {sending ? 'Preparing…' : (modality === 'image' || modality === 'video') && directorFlow.choices[modality].mode === 'preview' ? 'Preview prompt' : 'Send'}{selectedCount > 1 ? ` ×${selectedCount}` : ''}
+          </button>
+        </div>
+      </div>
+{/snippet}
+{#if composerOnly}{@render advancedComposer()}{:else}
+<div class="mobile-toolbar">
+  <button onclick={() => mobilePanel = mobilePanel === 'chats' ? null : 'chats'}>☰ Chats</button>
+  <span>{chat?.title ?? 'New chat'}</span>
+  {#if !basic}<button onclick={() => mobilePanel = mobilePanel === 'settings' ? null : 'settings'}>Settings</button>{/if}
+</div>
+{#if mobilePanel}<button class="mobile-shade" aria-label="Close panel" onclick={() => mobilePanel = null}></button>{/if}
+<div class="chat-layout flex flex-1 min-h-0">
   <!-- Sessions -->
-  <aside class="w-[240px] shrink-0 border-r border-bench-700 bg-bench-850 flex flex-col min-h-0">
+  <aside class:mobile-open={mobilePanel === 'chats'} class="chat-sidebar w-[240px] shrink-0 border-r border-bench-700 bg-bench-850 flex flex-col min-h-0">
     <div class="p-2 border-b border-bench-700 shrink-0">
       <button
         class="w-full rounded border border-bench-700 px-2 py-1.5 text-[12px] text-bench-300
                hover:border-bench-600 hover:text-bench-100 transition-colors"
-        onclick={() => store.newChat(modality)}
+        onclick={() => { store.newChat(modality); if (basic) basicFlow.update(modality, basicDefaults(modality === 'video' ? 'animate' : 'create')); mobilePanel = null }}
       >+ new chat</button>
     </div>
 
@@ -108,7 +241,7 @@
                    {!viewingUnfiled && store.activeChat[modality] === c.id
                      ? 'bg-bench-700 text-bench-100'
                      : 'text-bench-300 hover:bg-bench-800'}"
-            onclick={() => store.openChat(modality, c.id)}
+            onclick={() => { store.openChat(modality, c.id); mobilePanel = null }}
             oncontextmenu={(e) => openMenu(e, c)}
           >
             <div class="text-[12px] truncate pr-5">{c.title}</div>
@@ -133,7 +266,7 @@
       <button
         class="shrink-0 border-t border-bench-700 px-3 py-2 text-left text-[11.5px] transition-colors
                {viewingUnfiled ? 'bg-bench-700 text-bench-100' : 'text-bench-400 hover:text-bench-100'}"
-        onclick={() => (store.viewingUnfiled[modality] = true)}
+        onclick={() => { store.viewingUnfiled[modality] = true; mobilePanel = null }}
       >
         Earlier runs <span class="mono text-[10px] text-bench-600">{unfiled.length}</span>
       </button>
@@ -141,7 +274,7 @@
   </aside>
 
   <!-- Conversation -->
-  <main class="flex-1 flex flex-col min-h-0">
+  <main class="min-w-0 flex-1 flex flex-col min-h-0">
     {#if viewingUnfiled}
       <div class="flex-1 overflow-y-auto p-4 min-h-0">
         <p class="text-[11px] text-bench-600 mb-3 leading-relaxed">
@@ -172,14 +305,14 @@
                 <div class="flex-1"></div>
                 {#if modality === 'image' && r.state === 'done' && r.outputPath}
                   <button class="text-signal hover:text-bench-100" title="Turn this image into a video"
-                          onclick={() => (animationSource = r.outputPath!)}>animate</button>
+                          onclick={() => animate(r.outputPath!)}>animate</button>
                 {/if}
                 {#if r.outputPath}
                   <button class="text-bench-500 hover:text-bench-100"
-                          onclick={() => window.lab.reveal(r.outputPath!)}>reveal</button>
+                          onclick={() => basic ? lab.saveMedia(r.outputPath!) : lab.reveal(r.outputPath!)}>{basic || isWeb ? 'save' : 'reveal'}</button>
                 {/if}
-                <button class="text-bench-500 hover:text-fault"
-                        onclick={async () => { await window.lab.deleteRun(r.dir); store.refreshUnfiled() }}>delete</button>
+                {#if !isWeb}<button class="text-bench-500 hover:text-fault"
+                        onclick={async () => { await lab.deleteRun(r.dir); store.refreshUnfiled() }}>delete</button>{/if}
               </footer>
             </article>
           {/each}
@@ -194,9 +327,9 @@
                 {chat ? 'Empty chat.' : 'New conversation.'}
               </p>
               <p class="text-bench-600 text-[12px] mt-1 leading-relaxed">
-                Pick a model below and send a prompt. Check several models to fan the same
+                {#if basic}Choose a style, describe your idea, and create. Use a result’s Edit or Animate action to keep working with that exact image.{:else}Pick a model below and send a prompt. Check several models to fan the same
                 prompt out and compare. With context on, each message builds on the last —
-                turn it off for a fresh one-off.
+                turn it off for a fresh one-off.{/if}
               </p>
             </div>
           </div>
@@ -222,8 +355,11 @@
               {@const outputPath = j?.outputPath ?? m.outputPath}
               {@const text = j?.text ?? m.textOut}
               {@const error = j?.error ?? m.error}
+              {@const sourceImages = j?.images ?? m.images ?? []}
+              {@const editing = modality === 'image' && !!outputPath && (basic ? basicFlow.draft('image').workflow === 'edit' && basicFlow.draft('image').sourceImage === outputPath : !store.images.image.length && store.imageEditSources[chat.id] === outputPath)}
               <div class="flex">
-                <article class="max-w-[70%] min-w-[280px] rounded-xl rounded-bl-sm border border-bench-700 bg-bench-850 overflow-hidden">
+                <article class="max-w-[70%] min-w-[280px] rounded-xl rounded-bl-sm border
+                                {editing ? 'border-signal' : 'border-bench-700'} bg-bench-850 overflow-hidden">
                   <header class="flex items-center gap-2 px-2.5 py-1.5 border-b border-bench-700">
                     <span class="size-1.5 rounded-full shrink-0
                       {state === 'running' ? 'bg-live animate-pulse'
@@ -236,6 +372,15 @@
                     </span>
                   </header>
 
+                  {#if modality === 'image' && sourceImages.length}
+                    <div class="flex items-center gap-2 border-b border-bench-700 px-2.5 py-2 text-[11px] text-bench-300">
+                      {#if sourceImages[0].startsWith(store.runsDir + '/')}
+                        <img src={fileUrl(sourceImages[0])} alt="Submitted edit source"
+                             class="h-12 w-12 rounded object-contain bg-bench-950" />
+                      {/if}
+                      <span>Source used for this edit{sourceImages.length > 1 ? ` (${sourceImages.length} images)` : ''}</span>
+                    </div>
+                  {/if}
                   <div class="bg-bench-950 min-h-[60px] grid place-items-center">
                     {#if state === 'done' && outputPath}
                       {@render media(modality, outputPath, m.adapterLabel ?? '')}
@@ -250,29 +395,50 @@
                     {/if}
                   </div>
 
-                  <footer class="flex items-center gap-2 px-2.5 py-1 mono text-[10px]">
-                    {#if m.seed}<span class="text-bench-600">seed {m.seed}</span>{/if}
+                  {#if m.director || j?.director}
+                    {@const d = j?.director ?? m.director!}
+                    <details class="px-3 py-2 border-t border-bench-700 text-[12px]">
+                      <summary class="text-signal cursor-pointer">Prompt used · {d.preset}</summary>
+                      <p class="mt-2 whitespace-pre-wrap">{m.effectivePrompt ?? j?.prompt ?? d.finalPrompt}</p>
+                      <p class="mt-2 text-bench-400">Original: {d.originalPrompt}</p>
+                      <p class="mt-2 text-bench-400">Director: {d.model} · {d.visionUsed ? 'reference pixels inspected' : 'text only'}</p>
+                    </details>
+                  {/if}
+                  {#if m.requestSnapshot && state === 'done' && (modality === 'image' || modality === 'video')}
+                    {@const recipe = m.requestSnapshot.basic}
+                    {#if recipe}<details class="px-3 py-2 border-t border-bench-700 text-[11px]"><summary class="cursor-pointer text-bench-400">Settings used · {recipe.label}</summary><p class="mt-2">{recipe.workflow} · {recipe.quality} · version {recipe.version}</p><p>{m.adapterLabel}</p>{#if recipe.modifiers}<p>{recipe.modifiers.mood.name} · {recipe.modifiers.intensity.name}</p><p class="whitespace-pre-wrap">{[recipe.modifiers.mood.instructions,recipe.modifiers.intensity.instructions,...(modality==='video'?[recipe.modifiers.mood.motionInstructions,recipe.modifiers.intensity.motionInstructions]:[])].filter(Boolean).join('\n')}</p>{/if}</details>{/if}
+                    <div class="flex flex-wrap gap-3 px-3 py-2 border-t border-bench-700 text-[11px] text-signal">
+                      <button disabled={basicFlow.busy} onclick={() => basicFlow.send(modality, false, m)}>Make another</button>
+                      {#if basic}<button onclick={() => basicFlow.advanced(m)}>Open in Advanced</button>{/if}
+                      <button onclick={() => presetMessage = m}>Save as preset…</button>
+                    </div>
+                  {/if}
+                  <footer class="flex flex-wrap items-center gap-2 px-2.5 py-1 mono text-[10px]">
+                    {#if m.seed && !basic}<span class="text-bench-600">seed {m.seed}</span>{/if}
                     <div class="flex-1"></div>
-                    {#if j?.log}
+                    {#if j && !basic && !isWeb}
                       <button class="text-bench-500 hover:text-bench-100"
-                              onclick={() => (openLog = openLog === m.id ? null : m.id)}>log</button>
+                              onclick={() => showLog(m.id,j!.id)}>log</button>
                     {/if}
                     {#if modality === 'image' && outputPath && state === 'done'}
+                      <button class="text-signal hover:text-bench-100" aria-pressed={editing}
+                              title="Use this result as the source for your next edit"
+                              onclick={() => editImage(outputPath)}>{editing ? 'selected for editing' : 'edit this image'}</button>
                       <button class="text-signal hover:text-bench-100" title="Turn this image into a video"
-                              onclick={() => (animationSource = outputPath)}>animate</button>
+                              onclick={() => animate(outputPath)}>animate</button>
                     {/if}
                     {#if outputPath && state === 'done'}
                       <button class="text-bench-500 hover:text-bench-100"
-                              onclick={() => window.lab.reveal(outputPath!)}>reveal</button>
+                              onclick={() => basic ? lab.saveMedia(outputPath!) : lab.reveal(outputPath!)}>{basic || isWeb ? 'save' : 'reveal'}</button>
                     {/if}
                     {#if j && (state === 'running' || state === 'queued')}
                       <button class="text-fault hover:underline"
-                              onclick={() => window.lab.cancel(j.id)}>cancel</button>
+                              onclick={() => lab.cancel(j.id)}>cancel</button>
                     {/if}
                   </footer>
 
-                  {#if openLog === m.id && j?.log}
-                    <pre class="max-h-56 overflow-y-auto bg-bench-950 border-t border-bench-700 p-2.5 mono text-[10px] text-bench-400 whitespace-pre-wrap">{j.log}</pre>
+                  {#if openLog === m.id && j}
+                    <pre class="max-h-56 overflow-y-auto bg-bench-950 border-t border-bench-700 p-2.5 mono text-[10px] text-bench-400 whitespace-pre-wrap">{logText}</pre>
                   {/if}
                 </article>
               </div>
@@ -282,79 +448,20 @@
       </div>
 
       <!-- Composer -->
-      <div class="border-t border-bench-700 bg-bench-900 p-3 shrink-0">
-        <textarea
-          class="w-full resize-none rounded bg-bench-850 border border-bench-700 p-2.5 text-[13px]
-                 leading-relaxed outline-none focus:border-bench-600 placeholder:text-bench-600"
-          rows="2"
-          placeholder={promptOptional ? 'Optional note for this upscale…' : modality === 'text'
-            ? 'Ask something… (Enter to send, Shift+Enter for a new line)'
-            : `Describe what you want ${modality === 'music' ? 'to hear' : 'to see'}…`}
-          bind:value={store.prompts[modality]}
-          onkeydown={onKey}
-        ></textarea>
-
-        <div class="flex items-center gap-2 mt-2">
-          <ModelDropdown {modality} />
-
-          <button
-            class="flex items-center gap-1.5 rounded border px-2.5 py-1 mono text-[11px] transition-colors
-                   {contextOn
-                     ? 'border-signal/50 text-signal'
-                     : 'border-bench-700 text-bench-500 hover:border-bench-600'}"
-            title={contextOn
-              ? 'Context on: text models see the conversation; image models carry the last image forward. Click for fresh one-offs.'
-              : 'Context off: every message runs fresh.'}
-            onclick={toggleContext}
-          >
-            <span class="size-1.5 rounded-full {contextOn ? 'bg-signal' : 'bg-bench-600'}"></span>
-            context
-          </button>
-
-          {#if wantsImages || wantsAudio}
-            <button
-              class="mono text-[11px] px-2 py-1 rounded border border-bench-700 text-bench-300
-                     hover:border-bench-600 hover:text-bench-100"
-              onclick={async () =>
-                (store.images[modality] = wantsAudio
-                  ? await window.lab.pickAudio()
-                  : await window.lab.pickImages())}
-            >
-              {store.images[modality].length
-                ? wantsAudio
-                  ? store.images[modality][0].split('/').pop()
-                  : `${store.images[modality].length} image(s)`
-                : wantsAudio
-                  ? 'attach audio'
-                  : 'attach'}
-            </button>
-            {#if store.images[modality].length}
-              <button class="mono text-[11px] text-bench-400 hover:text-fault"
-                      onclick={() => (store.images[modality] = [])}>clear</button>
-            {/if}
-          {/if}
-
-          <div class="flex-1"></div>
-          <button
-            class="px-4 py-1.5 rounded text-[12px] font-medium transition-colors
-                   {runnable
-                     ? 'bg-signal text-bench-950 hover:brightness-110'
-                     : 'bg-bench-800 text-bench-600 cursor-not-allowed'}"
-            disabled={!runnable}
-            onclick={() => store.send(modality)}
-          >
-            Send{selectedCount > 1 ? ` ×${selectedCount}` : ''}
-          </button>
-        </div>
-      </div>
+      {#if basic}<BasicComposer {modality} />{:else}
+        {@render advancedComposer()}
+      {/if}
     {/if}
   </main>
 
   <!-- Model settings -->
-  <aside class="w-[280px] shrink-0 border-l border-bench-700 bg-bench-850 overflow-y-auto">
+  {#if !basic}
+  <aside class:mobile-open={mobilePanel === 'settings'} class="settings-sidebar w-[280px] shrink-0 border-l border-bench-700 bg-bench-850 overflow-y-auto">
     <ParamPanel {modality} />
   </aside>
+  {/if}
 </div>
+{/if}
 
 <svelte:window onkeydown={(e) => { if (e.key === 'Escape') menu = null }} />
 
@@ -388,7 +495,7 @@
     <img src={fileUrl(path)} {alt} loading="lazy" class="w-full h-auto block" />
   {:else if m === 'video'}
     <!-- svelte-ignore a11y_media_has_caption -->
-    <video src={fileUrl(path)} controls preload="metadata" class="w-full block"></video>
+    <video src={fileUrl(path)} playsinline controls preload="metadata" class="w-full block"></video>
   {:else if m === 'music'}
     <audio src={fileUrl(path)} controls preload="metadata" class="w-full p-3"></audio>
   {:else}
@@ -398,4 +505,9 @@
 
 {#if animationSource}
   <AnimateImage image={animationSource} onDismiss={() => (animationSource = null)} {onNavigate} />
+{/if}
+
+{#if presetMessage?.requestSnapshot}
+  {@const request = presetMessage.requestSnapshot}
+  <PresetEditor moodId={request.basic?.style} intensityId={request.basic?.intensity} directorId={basicFlow.catalog.presets.find((p) => p.id === request.basic?.presetId)?.director ?? (request.basic?.adult ? 'adult' : undefined)} adapterId={request.adapterIds[0]} params={request.params[request.adapterIds[0]]} thumbnail={modality === 'image' ? presetMessage.outputPath : request.images?.[0]} onDismiss={() => presetMessage = undefined} />
 {/if}

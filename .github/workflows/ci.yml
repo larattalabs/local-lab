@@ -25,15 +25,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
       - run: pnpm build
-      - name: Test image adapter contracts
-        run: node scripts/test-image-stack.mjs
-      - name: Test image-to-video workflow
-        run: node scripts/test-video-workflow.mjs
-      - name: Test video installation integrity
-        run: python3 scripts/test-video-setup.py
-      - name: Compile Python sources
-        run: python3 -m py_compile resources/workers/*.py scripts/*.py
-      - name: Test Qwen encoder config compatibility
-        run: python3 scripts/test-qwen-encoder.py
-      - name: Test DwarfStar worker protocol and lifecycle
-        run: python3 scripts/test-ds4-worker.py
+      - run: pnpm test
+      - run: python3 -m py_compile resources/workers/*.py scripts/*.py
+  packaged-mac:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: corepack enable && corepack prepare pnpm@11.6.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run pack
+      - run: pnpm run test:package

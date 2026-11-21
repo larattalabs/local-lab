@@ -1,3 +1,4 @@
+import { profileIssues, unavailable } from './profile-config'
 import { existsSync } from 'node:fs'
 import type { Adapter } from './types'
 import { imageAdapters } from './image'
@@ -8,24 +9,17 @@ import { omlxAdapters } from './omlx'
 import { ds4Adapters } from './ds4'
 import type { AvailabilityReport, Modality } from '@shared/types'
 
-let cached: Adapter[] | null = null
+const builtins = [...imageAdapters, ...videoAdapters, ...musicAdapters, ...ds4Adapters]
+if (profileIssues.has('qwen-native-runtime')) builtins.push(unavailable('qwen-native-runtime','image',profileIssues.get('qwen-native-runtime')!))
+let cached = builtins
+let pending: Promise<Adapter[]> | undefined
+export function allAdapters() { return cached }
 
-export function allAdapters(): Adapter[] {
-  // Text adapters are discovered at runtime — from `ollama list` and from the
-  // oMLX server (or its model directory when the server is stopped) — so the
-  // registry is built once per launch rather than being a module-level constant.
-  if (!cached) {
-    cached = [
-      ...imageAdapters, ...videoAdapters, ...musicAdapters,
-      ...textAdapters(), ...omlxAdapters(), ...ds4Adapters,
-    ]
-  }
-  return cached
-}
-
-export function refresh(): Adapter[] {
-  cached = null
-  return allAdapters()
+export function refresh(): Promise<Adapter[]> {
+  return pending ??= Promise.all([textAdapters(), omlxAdapters()]).then(([ollama, omlx]) => {
+    cached = [...builtins, ...ollama, ...omlx]
+    return cached
+  }).finally(() => { pending = undefined })
 }
 
 export function byId(id: string): Adapter | undefined {
@@ -43,6 +37,8 @@ export function byModality(m: Modality): Adapter[] {
  */
 export function availability(): AvailabilityReport[] {
   return allAdapters().map((a) => {
+    const reason = profileIssues.get(a.id)
+    if (reason) return { id:a.id, available:false, reason }
     const missing = a.requires.filter((p) => !existsSync(p))
     return missing.length
       ? { id: a.id, available: false, reason: `missing: ${missing.join(', ')}` }

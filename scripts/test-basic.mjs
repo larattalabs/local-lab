@@ -1,0 +1,98 @@
+import assert from 'node:assert/strict'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, realpathSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { createRequire } from 'node:module'
+const require = createRequire(import.meta.url)
+const { build } = createRequire(import.meta.resolve('vite'))('esbuild')
+const root = realpathSync(mkdtempSync(join(tmpdir(), 'lab-basic-')))
+try {
+  await build({ entryPoints: ['src/main/basic/service.ts', 'src/main/phone/assets.ts', 'src/main/phone/validation.ts'], outdir: root, bundle: true, platform: 'node', format: 'cjs', outExtension: { '.js': '.cjs' }, logLevel: 'silent' })
+  const { BasicService } = require(join(root, 'basic/service.cjs'))
+  const { Assets } = require(join(root, 'phone/assets.cjs'))
+  const { validateTurn } = require(join(root, 'phone/validation.cjs'))
+  const runs = join(root, 'runs'); mkdirSync(runs)
+  const source = join(runs, 'source.png'); writeFileSync(source, 'fixture')
+  const select = (key, values, def = values[0]) => ({ key, label: key, type: 'select', default: def, options: values.map((value) => ({ value, label: value })) })
+  const params = [select('aspect', ['1:1','2:3','3:2','9:16','16:9']), select('lora', ['', 'identity']), { key: 'lora_scale', label: 'Strength', type: 'float', default: 1, min: 0, max: 2 }, { key: 'seed', label: 'Seed', type: 'seed', default: null }, { key: 'steps', label: 'Steps', type: 'int', default: 8, min: 1, max: 50 }]
+  const adapters = ['fast', 'detailed'].flatMap((id) => [{ id, label: id, modality: 'image', imageEditAdapterId: id + '-edit', params }, { id: id + '-edit', label: id + '-edit', modality: 'image', acceptsImages: true, requiresImage: true, params }])
+  adapters.push({ id: 'video', label: 'Video', modality: 'video', acceptsImages: true, params: [select('resolution', ['512x512','448x768','768x448']), select('frames', ['49','97','121','241']), select('stage1_steps', ['4','8']), select('decoder', ['conv']), select('compute_precision', ['float16']), { key: 'no_audio', type: 'bool', default: true }, params[3]] }, { id: 'seedvr2', label: 'Upscale', modality: 'image', acceptsImages: true, requiresImage: true, promptOptional: true, params: [] })
+  const profiles = join(root, 'profiles.json'); writeFileSync(profiles, JSON.stringify({ models: { fast: 'fast', detailed: 'detailed', video: 'video' }, subjects: [{ id: 'subject', label: 'Saved identity', lora: 'identity', trigger: 'identity-token' }] }))
+  let available = adapters.map((a) => a.id), chats = []
+  const dep = { adapters: () => adapters, available: () => available, chats: () => chats, directorConfig: async () => ({ profiles: [] }) }
+  let service = new BasicService(join(root, 'settings'), runs, profiles, dep)
+  const input = (patch = {}) => ({ id: crypto.randomUUID(), workflow: 'create', presetId: 'natural', prompt: 'A person standing in daylight.', subject: '', quality: 'fast', aspect: '1:1', duration: '97', assistance: 'auto', mood: 'glamour', ...patch })
+  const fast = await service.plan(input()); assert.deepEqual(fast.turn.request.adapterIds, ['fast']); assert.equal(fast.choice.preset, 'photo'); service.verify(fast.turn); assert.equal(fast.turn.chat.title, 'A person standing in daylight.')
+  const detailed = await service.plan(input({ quality: 'detailed', subject: 'subject', presetId: 'adult' })); assert.equal(detailed.choice.preset, 'adult'); assert.equal(detailed.turn.request.params.detailed.lora, 'identity'); assert.match(detailed.turn.request.prompt, /^identity-token/); assert.equal(fast.turn.request.basic.adult, false)
+  const edit = await service.plan(input({ workflow: 'edit', sourceImage: source, quality: 'detailed' })); assert.deepEqual(edit.turn.request.adapterIds, ['detailed-edit']); assert.deepEqual(edit.turn.request.images, [source]); assert.equal(edit.choice.preset, 'edit')
+  const video = await service.plan(input({ workflow: 'animate', sourceImage: source, duration: '49' })); assert.equal(video.turn.chat.modality, 'video'); assert.equal(video.turn.chat.sourceImage, source); assert.equal(video.turn.request.params.video.frames, '49'); assert.equal(video.turn.request.params.video.stage1_steps, '4')
+  const up = await service.plan(input({ workflow: 'upscale', sourceImage: source, prompt: '' })); assert.equal(up.choice.mode, 'off')
+  await assert.rejects(service.plan(input({ workflow: 'edit' })), /source image/)
+  const outside = join(root, 'outside.png'); writeFileSync(outside, 'fixture'); symlinkSync(outside, join(runs, 'escape.png'))
+  await assert.rejects(service.plan(input({ workflow: 'edit', sourceImage: join(runs, 'escape.png') })), /media library/)
+  const retryInput = input(); const plans = await Promise.all([service.plan(retryInput), service.plan(retryInput)]); assert.deepEqual(plans[0], plans[1])
+  service = new BasicService(join(root, 'settings'), runs, profiles, dep); assert.deepEqual(await service.plan(retryInput), JSON.parse(JSON.stringify(plans[0])))
+  await assert.rejects(service.plan({ ...retryInput, prompt: 'Changed' }), /another draft/)
+  const changed = structuredClone(fast.turn); changed.request.params.fast.steps = 9; assert.throws(() => service.verify(changed), /changed after/)
+  const rewritten = structuredClone(fast.turn); rewritten.turnId = crypto.randomUUID(); rewritten.request.director = { previewId: rewritten.turnId, prompts: { fast: 'Approved rewrite' } }; service.verify(rewritten)
+  let catalog = await service.save({ id: '', version: 0, name: 'My portrait', workflow: 'create', adapterId: 'fast', params: fast.turn.request.params.fast, exposed: ['steps'], director: 'faithful', thumbnail: source }); let saved = catalog.presets[0]
+  const custom = await service.plan(input({ presetId: saved.id, values: { steps: 12 } })); assert.equal(custom.turn.request.params.fast.steps, 12); assert.equal(custom.choice.preset, 'faithful')
+  await assert.rejects(service.plan(input({ presetId: saved.id, values: { lora: 'identity' } })), /not exposed/)
+  await service.save({ ...saved, name: 'Renamed' }); await assert.rejects(service.save(saved), /another device/)
+  assert.throws(() => service.remove(saved), /another device/)
+  service = new BasicService(join(root, 'settings'), runs, profiles, dep); saved = service.catalog().presets[0]; assert.equal(saved.name, 'Renamed')
+  const assets = new Assets(runs, 'test-secret'), wire = assets.wire(edit.turn); assert.match(wire.request.images[0], /^\/api\/assets\//); service.verify(validateTurn(wire, adapters, assets)); assert.match(assets.wire(saved).thumbnail, /^\/api\/assets\//)
+  chats = [{ messages: [{ id: 'completed', state: 'done', requestSnapshot: edit.turn.request, effectivePrompt: 'Approved exact edit prompt.' }] }]
+  const repeat = await service.plan(input({ repeatMessageId: 'completed' })); assert.equal(repeat.choice.mode, 'off'); assert.equal(repeat.turn.request.prompt, 'Approved exact edit prompt.'); assert.deepEqual(repeat.turn.request.images, [source]); assert.notEqual(repeat.turn.request.params['detailed-edit'].seed, edit.turn.request.params['detailed-edit'].seed)
+  service.remove(saved); assert.equal(service.catalog().presets.length, 0)
+  const identityPreset = (await service.save({ id: '', version: 0, name: 'Identity preset', workflow: 'create', adapterId: 'detailed', params: detailed.turn.request.params.detailed, exposed: [], director: 'adult' })).presets[0]
+  const identityPlan = await service.plan(input({ presetId: identityPreset.id })); assert.match(identityPlan.turn.request.prompt, /^identity-token/); assert.equal(identityPlan.turn.request.basic.subject, 'subject')
+  // Mood/intensity editing is durable, conflict checked, and snapshots every applied instruction.
+  assert.equal(detailed.turn.request.basic.intensity, 'low')
+  assert.equal(detailed.turn.request.basic.modifiers.intensity.instructions, '')
+  assert(detailed.turn.request.prompt.endsWith('Style: glamour.'))
+  const oldConfig = service.catalog().modifiers
+  let modified = structuredClone(oldConfig)
+  modified.moods.push({ id: 'studio', name: 'Studio', description: 'A studio test.', instructions: 'Use a simple studio backdrop.', motionInstructions: 'Keep the camera still.' })
+  modified.intensities.push({ id: 'quiet', name: 'Quiet', description: '', instructions: 'Use relaxed posture.', motionInstructions: 'Finish in a resting pose.' })
+  let events = 0; service.onChange(() => events++)
+  const configured = service.configureModifiers(modified).modifiers
+  assert.equal(events, 1); assert.equal(configured.revision, oldConfig.revision + 1)
+  assert.throws(() => service.configureModifiers(oldConfig), /another device/)
+  assert.throws(() => service.configureModifiers({...configured, moods:configured.moods.filter(p=>p.id!=='glamour')}), /built-in/i)
+  const duplicate = structuredClone(configured); duplicate.moods.at(-1).name = 'GLAMOUR'
+  assert.throws(() => service.configureModifiers(duplicate), /different name/)
+  const invalid = structuredClone(configured); invalid.intensities[0].instructions = 'x'.repeat(2001)
+  assert.throws(() => service.configureModifiers(invalid), /limits/)
+  const adultInput = input({presetId:'adult',mood:'studio',intensity:'quiet',assistance:'off'})
+  const customMood = await service.plan(adultInput)
+  assert.match(customMood.turn.request.prompt, /simple studio backdrop/); assert.match(customMood.turn.request.prompt, /relaxed posture/)
+  assert.doesNotMatch(customMood.turn.request.prompt, /camera still/)
+  assert.equal(customMood.choice.mode, 'off'); assert.equal(customMood.choice.freedom,'low')
+  const videoMood = await service.plan(input({presetId:'adult',workflow:'animate',sourceImage:source,mood:'studio',intensity:'high'}))
+  assert.match(videoMood.turn.request.prompt,/INTENSITY: DRAMATIC/);assert.match(videoMood.turn.request.prompt,/camera still/);assert.match(videoMood.turn.request.prompt,/clear beginning and end/)
+  const adultUpscale = await service.plan(input({presetId:'adult',workflow:'upscale',sourceImage:source,intensity:'high'}));assert.equal(adultUpscale.turn.request.basic.modifiers,undefined);assert.equal(adultUpscale.turn.request.prompt,'Restore and upscale the selected image.')
+  const legacyEdit = await service.plan(input({presetId:'adult',workflow:'edit',sourceImage:source}));assert.match(legacyEdit.turn.request.prompt,/Style: glamour\.\nEdit only/);assert.doesNotMatch(legacyEdit.turn.request.prompt,/INTENSITY/)
+  const editedMood = await service.plan(input({presetId:'adult',workflow:'edit',sourceImage:source,mood:'swimwear',intensity:'medium'}))
+  assert.match(editedMood.turn.request.prompt,/INTENSITY: BOLD/);assert.match(editedMood.turn.request.prompt,/preserve the source identity/);assert.deepEqual(editedMood.turn.request.images,[source])
+  const unaffected = await service.plan(input({mood:'studio',intensity:'high'}));assert.equal(unaffected.turn.request.basic.modifiers,undefined);assert.doesNotMatch(unaffected.turn.request.prompt,/INTENSITY/)
+  const withPreset = (await service.save({id:'',version:0,name:'Studio defaults',workflow:'create',adapterId:'fast',params:{steps:8},exposed:[],director:'adult',mood:'studio',intensity:'quiet'})).presets.find(p=>p.name==='Studio defaults')
+  assert.equal(withPreset.mood,'studio');assert.equal(withPreset.intensity,'quiet')
+  const inUse = service.catalog().modifiers;inUse.moods=inUse.moods.filter(p=>p.id!=='studio')
+  assert.throws(()=>service.configureModifiers(inUse),/existing preset/)
+  modified=service.catalog().modifiers;modified.moods.find(p=>p.id==='studio').instructions='Use a new backdrop.';service.configureModifiers(modified)
+  service = new BasicService(join(root, 'settings'), runs, profiles, dep)
+  assert.equal(service.catalog().modifiers.moods.find(p=>p.id==='studio').instructions,'Use a new backdrop.')
+  assert.deepEqual(await service.plan(adultInput),JSON.parse(JSON.stringify(customMood)), 'Prepared plans retain their exact instructions after profile edits and restart')
+  chats=[{messages:[{id:'modifier-result',state:'done',requestSnapshot:customMood.turn.request,effectivePrompt:'Approved final prompt.'}]}]
+  const exact = await service.plan(input({repeatMessageId:'modifier-result'}))
+  assert.equal(exact.turn.request.prompt,'Approved final prompt.');assert.deepEqual(exact.turn.request.basic.modifiers,customMood.turn.request.basic.modifiers)
+  const tamper=structuredClone(customMood.turn);tamper.request.basic.modifiers.intensity.instructions='Altered';assert.throws(()=>service.verify(tamper),/changed after/)
+  await assert.rejects(service.plan(input({presetId:'adult',mood:'missing'})),/unavailable/)
+  service.remove(withPreset)
+  modified=service.catalog().modifiers;modified.moods=modified.moods.filter(p=>p.id!=='studio');service.configureModifiers(modified)
+  await assert.rejects(service.plan({...adultInput,id:crypto.randomUUID()}),/unavailable/)
+  console.log('Mood/intensity contracts passed: legacy Low, custom options, instructions with assistance off, video-only motion, edits, unaffected normal styles, preset defaults, conflict checks, validation, deletion dependencies, persistence, immutable plans/rerolls and tamper rejection.')
+  available = available.filter((id) => id !== 'fast'); await assert.rejects(service.plan(input()), /unavailable/)
+  console.log('Basic contracts passed: routes, private identity, explicit 18+ director, pinned edit/video sources, upscale, preset versions and controls, durable/concurrent retries, tamper rejection, phone asset roundtrip, exact-prompt rerolls and unavailable models.')
+} finally { rmSync(root, { recursive: true, force: true }) }

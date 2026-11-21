@@ -18,7 +18,9 @@ try {
   const { videoAdapters, modelEnv } = await import(pathToFileURL(module).href)
   const adapter = videoAdapters.find((a) => a.id === id)
   if (!adapter) throw new Error('Unknown video adapter: ' + id)
-  const missing = adapter.requires.filter((path) => !existsSync(path))
+  const validatingInstall = process.env.LOCALLAB_SMOKE_VALIDATE_INSTALL === '1'
+  const pendingMarkers = adapter.requires.filter((path) => path.endsWith('/local-lab-ready.json') && !existsSync(path))
+  const missing = adapter.requires.filter((path) => !existsSync(path) && !(validatingInstall && pendingMarkers.includes(path)))
   if (missing.length) throw new Error('Missing local requirements: ' + missing.join(', '))
   const dir = resolve(outputDir)
   mkdirSync(dir, { recursive: true })
@@ -66,4 +68,7 @@ try {
   writeFileSync(join(dir, 'result.json'), JSON.stringify(record, null, 2) + '\n')
   console.log(JSON.stringify({ id, ...result, seconds, maxResidentGiB: record.maxResidentGiB, output, validationError }))
   if (result.code !== 0 || validationError) process.exitCode = 1
+  else if (validatingInstall) {
+    for (const path of pendingMarkers) writeFileSync(path, JSON.stringify({ validatedAt: new Date().toISOString(), id, output, params }, null, 2) + '\n')
+  }
 } finally { rmSync(temp, { recursive: true, force: true }) }

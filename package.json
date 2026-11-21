@@ -11,13 +11,25 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json && tsc --noEmit -p tsconfig.node.json",
-    "pack": "electron-vite build && electron-builder --dir",
-    "dist": "electron-vite build && electron-builder"
+    "pack": "electron-vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --arm64 --dir",
+    "dist": "electron-vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --arm64",
+    "icon": "swift scripts/generate-app-icon.swift",
+    "test": "node scripts/test-contracts.mjs",
+    "test:package": "node scripts/test-package.mjs",
+    "test:phone": "node scripts/test-phone-access.mjs",
+    "test:director": "node scripts/test-director.mjs && node scripts/test-director-flow.mjs",
+    "test:basic": "node scripts/test-basic.mjs && node scripts/test-basic-flow.mjs",
+    "test:studio": "node scripts/test-studio.mjs",
+    "test:history": "node scripts/test-history-reset.mjs",
+    "test:code": "node scripts/test-code-harness.mjs",
+    "test:code-features": "node scripts/test-code-features.mjs",
+    "test:code-guard": "node scripts/test-code-guard.mjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.3",
     "@tailwindcss/vite": "^4.0.0",
     "@types/node": "^22.10.0",
+    "@types/qrcode": "^1.5.6",
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
@@ -42,17 +54,35 @@
         "from": "resources/workers",
         "to": "workers",
         "filter": [
-          "**/*"
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc"
         ]
       }
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
       "target": [
-        "dmg"
-      ]
-    }
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "resources/brand/icon.icns",
+      "sign": "scripts/sign-local.cjs",
+      "extendInfo": {
+        "NSLocalNetworkUsageDescription": "Local Lab lets your paired iPhone use models on this Mac over your private Wi-Fi network."
+      }
+    },
+    "electronDist": "node_modules/electron/dist",
+    "artifactName": "${productName}-${version}-${arch}.${ext}"
   },
   "author": "Laratta Labs",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@lucide/svelte": "^1.73.0",
+    "qrcode": "^1.5.4"
+  }
 }

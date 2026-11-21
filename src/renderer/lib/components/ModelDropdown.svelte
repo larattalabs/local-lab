@@ -24,7 +24,7 @@
     <button class="fixed inset-0 z-10 cursor-default" aria-label="close"
             onclick={() => (open = false)}></button>
 
-    <div class="absolute bottom-full left-0 z-20 mb-2 w-[340px] max-h-[420px] overflow-y-auto
+    <div class="absolute bottom-full left-0 z-20 mb-2 w-[340px] max-w-[calc(100vw-24px)] max-h-[50dvh] overflow-y-auto
                 rounded-lg border border-bench-600 bg-bench-850 shadow-xl shadow-black/50 p-2 space-y-3">
       {#if !adapters.length}
         <p class="text-bench-400 text-[12px] p-2 leading-relaxed">

@@ -6,8 +6,10 @@
     onchange: (key: string, value: unknown) => void
   } = $props()
   let advanced = $state(false)
-  const basic = $derived(adapter.params.filter((p) => !p.advanced))
-  const extra = $derived(adapter.params.filter((p) => p.advanced))
+  const visible = $derived(adapter.params.filter((p) => !p.visibleWhen ||
+    (values[p.visibleWhen.key] ?? adapter.params.find((v) => v.key === p.visibleWhen?.key)?.default) === p.visibleWhen.value))
+  const basic = $derived(visible.filter((p) => !p.advanced))
+  const extra = $derived(visible.filter((p) => p.advanced))
   function set(p: ParamSpec, raw: string | boolean) {
     let value: unknown = raw
     if (p.type === 'int' || p.type === 'seed') value = raw === '' ? null : parseInt(String(raw), 10)

@@ -1,3 +1,5 @@
+import type { BasicRecipe } from './basic'
+import type { DirectorApproval, DirectorProvenance } from './director'
 /**
  * Shared vocabulary between the Electron main process and the renderer.
  *
@@ -30,10 +32,13 @@ export interface ParamSpec {
   help?: string
   /** Render on the collapsed "advanced" shelf rather than the main form. */
   advanced?: boolean
+  /** Inactive controls retain saved values but are omitted from submitted settings. */
+  visibleWhen?: { key: string; value: string }
 }
 
 /** Renderer-safe description of a model. No functions cross the IPC boundary. */
 export interface AdapterInfo {
+  frameRate?: number
   id: string
   label: string
   modality: Modality
@@ -46,6 +51,8 @@ export interface AdapterInfo {
   params: ParamSpec[]
   /** Accepts reference/init images (FLUX.2 edit, Kontext, img2img). */
   acceptsImages?: boolean
+  /** Matching instruction editor used when an image accompanies this generator. */
+  imageEditAdapterId?: string
   /** The CLI *requires* an input image — editing/variation models. Running
    *  without one fails immediately with a clear message instead of a
    *  argparse traceback. */
@@ -71,7 +78,25 @@ export interface AvailabilityReport {
 
 export type JobState = 'queued' | 'running' | 'done' | 'error' | 'cancelled'
 
+export interface RunDetails {
+  model: string
+  engine: string
+  encoder?: string
+  identity?: string
+  strength?: number
+  seed?: number
+  size?: string
+  frames?: number
+  fps?: number
+}
 export interface Job {
+  parentIds?: string[]
+  progress?: import("./studio").ProgressInfo
+  details?: RunDetails
+  basic?: BasicRecipe
+  kind?: 'director'
+  originalPrompt?: string
+  director?: DirectorProvenance
   id: string
   adapterId: string
   adapterLabel: string
@@ -104,6 +129,12 @@ export interface Comparison {
 }
 
 export interface RunRequest {
+  parentIds?: string[]
+  basic?: BasicRecipe
+  director?: DirectorApproval
+  /** Server-resolved prompts/provenance. Never trusted from a network client. */
+  directedPrompts?: Record<string, string>
+  directorRecords?: Record<string, DirectorProvenance>
   adapterIds: string[]
   modality: Modality
   prompt: string
@@ -119,6 +150,12 @@ export interface RunRequest {
  * deleting a folder in Finder and deleting from the app agree by construction.
  */
 export interface RunRecord {
+  parentIds?: string[]
+  details?: RunDetails
+  images?: string[]
+  basic?: BasicRecipe
+  originalPrompt?: string
+  director?: DirectorProvenance
   dir: string
   modality: Modality
   adapterId: string
@@ -142,6 +179,13 @@ export interface RunRecord {
  * live jobs render from runner state via jobId.
  */
 export interface ChatMessage {
+  originalPrompt?:string
+  parentIds?: string[]
+  details?: RunDetails
+  requestSnapshot?: RunRequest
+  effectivePrompt?: string
+  director?: DirectorProvenance
+  turnId?: string
   id: string
   role: 'user' | 'gen'
   at: number
@@ -168,6 +212,8 @@ export interface ChatMessage {
  * never deletes generations.
  */
 export interface Chat {
+  projectId?: string
+  revision?: number
   /** Original still carried into an image-to-video conversation. */
   sourceImage?: string
   id: string
@@ -178,4 +224,27 @@ export interface Chat {
   /** Composer default for this chat; each user message records what it used. */
   contextOn: boolean
   messages: ChatMessage[]
+}
+
+/** A turn is accepted and persisted by the Mac, independently of any window. */
+export interface SubmitTurn {
+  turnId: string
+  chat: Pick<Chat, 'id' | 'modality' | 'title' | 'contextOn' | 'sourceImage' | 'revision' | 'projectId'>
+  request: RunRequest
+  contextUsed: boolean
+}
+export interface TurnResult { chat: Chat; jobs: Job[] }
+export interface PhoneStatus {
+  enabled: boolean
+  url?: string
+  ipUrl?: string
+  setupUrl?: string
+  qr?: string
+  setupQr?: string
+  fingerprint?: string
+  code?: string
+  pairingExpires?: number
+  error?: string
+  pending: { id: string; name: string; address: string; expires: number }[]
+  devices: { id: string; name: string; pairedAt: number; lastSeen: number }[]
 }

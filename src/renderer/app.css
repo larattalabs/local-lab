@@ -37,3 +37,42 @@ body {
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--color-bench-700); border-radius: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* Shared desktop and phone surface. No generated media is cached offline. */
+#app { height:100dvh; }
+.web-client .titlebar { padding-left:12px; padding-top:env(safe-area-inset-top); height:calc(48px + env(safe-area-inset-top)); -webkit-app-region:no-drag; }
+.connection-banner { padding:9px 14px; background:#523f1e; color:#ffda9b; font-size:12px; }
+.mobile-toolbar,.mobile-shade { display:none; }
+.composer { padding-bottom:max(12px, env(safe-area-inset-bottom)); }
+@media (max-width: 800px) {
+  .titlebar { padding-left:12px; }
+  .titlebar .brand { margin-right:4px; font-size:10px; }
+  .titlebar button { min-height:42px; padding-left:10px; padding-right:10px; }
+  .mobile-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:4px 12px; border-bottom:1px solid #222831; height:48px; flex-shrink:0; }
+  .mobile-toolbar span { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:12px; color:#97a3b4; }
+  .mobile-toolbar button { min-height:40px; flex-shrink:0; color:#d8a657; }
+  .chat-sidebar,.settings-sidebar { display:none; }
+  .chat-sidebar.mobile-open,.settings-sidebar.mobile-open { display:flex; position:fixed; top:calc(96px + env(safe-area-inset-top)); bottom:0; z-index:35; width:min(340px,90vw); box-shadow:0 10px 60px #000b; padding-bottom:env(safe-area-inset-bottom); }
+  .chat-sidebar.mobile-open { left:0; } .settings-sidebar.mobile-open { right:0; display:block; }
+  .mobile-shade { display:block; position:fixed; inset:0; top:calc(96px + env(safe-area-inset-top)); background:#0008; z-index:30; }
+  .chat-sidebar button { min-height:42px; }
+  .chat-sidebar .group > button:last-child { display:block; }
+  .composer { padding:10px; padding-bottom:max(10px,env(safe-area-inset-bottom)); }
+  .composer-actions { flex-wrap:wrap; gap:7px; }
+  .composer-actions button { min-height:40px; }
+  textarea,input,select { font-size:16px !important; }
+  .composer textarea { max-height:22dvh; }
+  .queue-bar { height:auto; min-height:34px; padding:5px 10px; font-size:10px; gap:7px; flex-wrap:wrap; }
+  .queue-bar > span[title] { display:none; }
+  .animate-grid { grid-template-columns:1fr; gap:16px; }
+  .animate-grid > div:first-child img { max-height:180px; object-fit:contain; }
+  article footer { flex-wrap:wrap; }
+  article footer button { min-height:36px; }
+  .chat-layout main > div { padding-left:10px; padding-right:10px; }
+}
+
+@media (max-width: 800px) {
+  .text-bench-600 { color:#748090; }
+  .text-bench-400 { color:#8d99a8; }
+  textarea::placeholder { color:#748090; }
+}
