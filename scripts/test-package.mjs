@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, statSync, rmSync } from 'node:fs'
 import { X509Certificate } from 'node:crypto'
 import tls from 'node:tls'
@@ -45,6 +45,8 @@ try {
     const peer=s.getPeerX509Certificate(),trusted=new X509Certificate(ca)
     console.error(`TLS diagnostic for ${e.code}:\nserved: subject=${peer?.subject} issuer=${peer?.issuer} checkIssued=${peer?.checkIssued(trusted)} verify=${peer?.verify(trusted.publicKey)}`
       +`\ntrusted CA: subject=${trusted.subject} fp=${trusted.fingerprint256}\napp CA fp: ${status.fingerprint}\nphone dir: ${readdirSync(join(userData,'phone')).join(' ')}`)
+    for(const bin of ['/opt/homebrew/bin/openssl','/usr/bin/openssl'])try{console.error(bin+': '+execFileSync(bin,['version'],{encoding:'utf8'}).trim())}catch{console.error(bin+': missing')}
+    console.error(peer?.toString()+'\n'+trusted.toString())
     s.end();r(e)});s.on('error',x=>{console.error('TLS diagnostic connect failed: '+x.message);r(e)})})
   const get=path=>new Promise((r,j)=>https.get({host:'127.0.0.1',port:phone,servername:'localhost',path,ca},res=>{let body='';res.on('data',c=>body+=c);res.on('end',()=>{try{assert.equal(res.statusCode,200);r(body)}catch(e){j(e)}})}).on('error',e=>diagnose(e).then(j,j)))
   const html=await get('/')
