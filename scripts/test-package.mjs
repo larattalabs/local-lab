@@ -43,9 +43,9 @@ try {
   // On a TLS failure, report which certificate the server presented versus the CA the test trusted.
   const diagnose=e=>new Promise(r=>{const s=tls.connect({host:'127.0.0.1',port:phone,servername:'localhost',rejectUnauthorized:false},()=>{
     const peer=s.getPeerX509Certificate(),trusted=new X509Certificate(ca)
-    e.message+=`\nserved: subject=${peer?.subject} issuer=${peer?.issuer} checkIssued=${peer?.checkIssued(trusted)} verify=${peer?.verify(trusted.publicKey)}`
-      +`\ntrusted CA: subject=${trusted.subject} fp=${trusted.fingerprint256}\napp CA fp: ${status.fingerprint}\nphone dir: ${readdirSync(join(userData,'phone')).join(' ')}`
-    s.end();r(e)});s.on('error',x=>{e.message+='\ndiagnostic connect failed: '+x.message;r(e)})})
+    console.error(`TLS diagnostic for ${e.code}:\nserved: subject=${peer?.subject} issuer=${peer?.issuer} checkIssued=${peer?.checkIssued(trusted)} verify=${peer?.verify(trusted.publicKey)}`
+      +`\ntrusted CA: subject=${trusted.subject} fp=${trusted.fingerprint256}\napp CA fp: ${status.fingerprint}\nphone dir: ${readdirSync(join(userData,'phone')).join(' ')}`)
+    s.end();r(e)});s.on('error',x=>{console.error('TLS diagnostic connect failed: '+x.message);r(e)})})
   const get=path=>new Promise((r,j)=>https.get({host:'127.0.0.1',port:phone,servername:'localhost',path,ca},res=>{let body='';res.on('data',c=>body+=c);res.on('end',()=>{try{assert.equal(res.statusCode,200);r(body)}catch(e){j(e)}})}).on('error',e=>diagnose(e).then(j,j)))
   const html=await get('/')
   const entry=html.match(/src="([^"]+\.js)"/)?.[1];assert(entry)
